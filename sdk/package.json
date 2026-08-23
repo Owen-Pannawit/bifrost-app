@@ -1,0 +1,29 @@
+{
+  "name": "@bearing/bifrost-sdk",
+  "version": "0.1.0",
+  "description": "Print to a Bluetooth printer from a web page, via the Bifrost bridge.",
+  "type": "module",
+  "main": "./dist/bifrost.cjs",
+  "module": "./dist/bifrost.esm.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/bifrost.esm.js",
+      "require": "./dist/bifrost.cjs"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs,iife --global-name Bifrost --dts --minify --out-dir dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "//dependencies": "Intentionally empty and checked in CI — FR-703. Nothing to audit, nothing to update transitively.",
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "tsup": "^8.3.0",
+    "vitest": "^2.1.0"
+  }
+}

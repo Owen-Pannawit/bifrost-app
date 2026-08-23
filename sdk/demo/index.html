@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bifrǫst — print demo</title>
+<style>
+  :root { --ok:#2E7D32; --warn:#F57C00; --err:#C62828; --idle:#616161; --brand:#1B4A8C; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin:0; padding:16px;
+         background:#f5f5f5; color:#111; }
+  h1 { font-size:20px; margin:0 0 4px; color:var(--brand); }
+  .sub { font-size:13px; color:#555; margin:0 0 16px; }
+  .card { background:#fff; border-radius:12px; padding:16px; margin-bottom:12px;
+          box-shadow:0 1px 3px rgba(0,0,0,.12); }
+  .status { display:flex; align-items:center; gap:10px; font-size:16px; font-weight:600; }
+  .dot { width:14px; height:14px; border-radius:50%; background:var(--idle); flex:none; }
+  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
+  .detail { font-size:13px; color:#555; margin-top:6px; }
+  label { display:block; font-size:13px; font-weight:600; margin:12px 0 4px; }
+  input { width:100%; height:48px; font-size:16px; padding:0 12px; border:1px solid #bbb;
+          border-radius:8px; }
+  button { width:100%; height:56px; font-size:17px; font-weight:600; border:0; border-radius:8px;
+           background:var(--brand); color:#fff; margin-top:16px; }
+  button:disabled { background:#9aa5b1; }
+  #log { font-family: ui-monospace, monospace; font-size:12px; white-space:pre-wrap;
+         max-height:220px; overflow:auto; color:#333; }
+</style>
+</head>
+<body>
+
+<h1>Bifrǫst</h1>
+<p class="sub">Web page → app → Bluetooth → paper</p>
+
+<div class="card">
+  <div class="status"><span id="dot" class="dot"></span><span id="state">Checking…</span></div>
+  <div class="detail" id="detail"></div>
+</div>
+
+<div class="card">
+  <label for="partNo">Part number</label>
+  <input id="partNo" value="6205-2RS" autocomplete="off">
+  <label for="lot">Lot</label>
+  <input id="lot" value="L2408-0231" autocomplete="off">
+  <button id="print" disabled>Print label</button>
+</div>
+
+<div class="card"><div id="log">Ready.</div></div>
+
+<script src="../dist/bifrost.global.js"></script>
+<script>
+const bifrost = new Bifrost.BifrostClient();
+const $ = id => document.getElementById(id);
+const log = m => { $('log').textContent = `${new Date().toLocaleTimeString()}  ${m}\n${$('log').textContent}`; };
+
+function show(cls, text, detail = '') {
+  $('dot').className = `dot ${cls}`;
+  $('state').textContent = text;
+  $('detail').textContent = detail;
+  // Disabling the button beats letting the operator discover the problem by pressing it (US-504).
+  $('print').disabled = cls !== 'ok';
+}
+
+async function refresh() {
+  const r = await bifrost.getStatus();
+
+  if (!r.ok) return show('err', 'Bridge not running', r.error.message);
+
+  const p = r.value.printer;
+  if (p.state === 'READY') {
+    show('ok', 'Printer ready', `${p.name} · ${p.language} · ${p.printWidthDots} dots`);
+  } else if (p.state === 'CONNECTING') {
+    show('warn', 'Connecting…');
+  } else {
+    show('err', 'Printer not connected', p.lastError ?? 'Select a printer in BifrǫstApp.');
+  }
+}
+
+$('print').onclick = async () => {
+  const partNo = $('partNo').value.trim();
+  const lot = $('lot').value.trim();
+  if (!partNo) return log('Enter a part number.');
+
+  $('print').disabled = true;
+  log(`Printing ${partNo}…`);
+
+  const r = await bifrost.print(
+    Bifrost.doc()
+      .text(partNo, { size: 3, bold: true, align: 'center' })
+      .text(`Lot ${lot}`, { size: 1, align: 'center' })
+      .barcode('CODE128', partNo, { heightDots: 80, moduleWidth: 3 })
+      .feed(3)
+      .build()
+  );
+
+  // error.message is already operator-safe — rewriting it would create a second vocabulary for
+  // the same fault (DES-09 §9).
+  log(r.ok ? `Printed — ${r.value.jobId} (${r.value.byteCount} bytes)` : r.error.message);
+  await refresh();
+};
+
+refresh();
+setInterval(refresh, 3000);   // polling; the WebSocket event stream is Phase 6
+</script>
+
+</body>
+</html>

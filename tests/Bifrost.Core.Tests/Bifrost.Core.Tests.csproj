@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Bifrost.Core\Bifrost.Core.csproj" />
+    <ProjectReference Include="..\..\src\Bifrost.Server\Bifrost.Server.csproj" />
+    <ProjectReference Include="..\..\src\Bifrost.Drivers\Bifrost.Drivers.csproj" />
   </ItemGroup>
 
 </Project>

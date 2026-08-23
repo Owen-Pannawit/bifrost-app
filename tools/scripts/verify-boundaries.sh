@@ -68,8 +68,14 @@ if [ -z "$manifest" ]; then
   note "TC-615 skipped: no $config manifest. Run: dotnet build src/Bifrost.App -c $config"
 else
   if grep -o '<uses-permission[^>]*>' "$manifest" | grep -q 'android.permission.INTERNET'; then
-    bad "TC-615: INTERNET permission present in the $config manifest (NFR-306)"
-    note "Debug builds add it for the debugger; Release must not ship it."
+    if [ "$config" = "Debug" ]; then
+      # The .NET Android SDK injects INTERNET into Debug builds so the debugger can attach.
+      # Only the shipped artefact is in scope for NFR-306, so this is expected, not a defect.
+      pass "TC-615: INTERNET present in Debug (SDK adds it for the debugger — expected)"
+    else
+      bad "TC-615: INTERNET permission present in the $config manifest (NFR-306)"
+      note "Only Release ships. Something added it to the source manifest."
+    fi
   else
     pass "TC-615: no INTERNET permission in the $config manifest"
   fi

@@ -76,9 +76,21 @@ public sealed record BridgeResponse(
     public static BridgeResponse Accepted(string json) => Json(202, json);
 
     /// <summary>An error in the shape defined by DES-03 §4 — one envelope for every failure.</summary>
+    /// <remarks>
+    /// camelCase is part of the wire contract, not a preference: DES-03 specifies
+    /// <c>error.code</c>. Serialising with default options emits PascalCase and silently breaks
+    /// every client's error handling.
+    /// </remarks>
     public static BridgeResponse Error(int statusCode, string code, string message, bool transient) =>
         Json(statusCode, System.Text.Json.JsonSerializer.Serialize(
-            new ErrorEnvelope(new ErrorBody(code, message, transient))));
+            new ErrorEnvelope(new ErrorBody(code, message, transient)), WireJson));
+
+    /// <summary>The one serialiser configuration for everything on the wire.</summary>
+    public static readonly System.Text.Json.JsonSerializerOptions WireJson = new()
+    {
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
 }
 
 /// <summary>
