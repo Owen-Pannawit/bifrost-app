@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!--
+    NO android.permission.INTERNET.
+
+    The app never makes an outbound network call — it is a server, not a client. Its absence is a
+    verifiable guarantee that print content cannot leave the device (NFR-306), and TC-615 asserts
+    it. The project template ships with INTERNET; it was removed deliberately.
+
+    Permission set: Docs/03-design/08-security-design.md §6.1.
+  -->
+
+  <!-- Bluetooth, API 30 and below -->
+  <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+  <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+
+  <!-- Bluetooth, API 31+. neverForLocation so no location permission is implied. -->
+  <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+  <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+                   android:usesPermissionFlags="neverForLocation" />
+
+  <!-- Foreground service keeps the bridge and the printer connection alive (FR-407) -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <!-- Restart the queue after reboot (FR-408) -->
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+  <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
+
+  <application
+      android:label="@string/app_name"
+      android:icon="@mipmap/appicon"
+      android:roundIcon="@mipmap/appicon_round"
+      android:supportsRtl="true"
+      android:allowBackup="false"
+      android:usesCleartextTraffic="false">
+    <!--
+      allowBackup="false" — keeps the pairing token and job history out of device backups
+      (DES-08 §6.2).
+    -->
+  </application>
+
+</manifest>

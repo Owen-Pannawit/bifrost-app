@@ -1,0 +1,10 @@
+<Solution>
+  <Project Path="../tests/Bifrost.Core.Tests/Bifrost.Core.Tests.csproj" />
+  <Project Path="../tests/Bifrost.Drivers.Tests/Bifrost.Drivers.Tests.csproj" />
+  <Project Path="Bifrost.App/Bifrost.App.csproj" />
+  <Project Path="Bifrost.Core/Bifrost.Core.csproj" />
+  <Project Path="Bifrost.Drivers/Bifrost.Drivers.csproj" />
+  <Project Path="Bifrost.Server.EmbedIO/Bifrost.Server.EmbedIO.csproj" />
+  <Project Path="Bifrost.Server/Bifrost.Server.csproj" />
+  <Project Path="Bifrost.Transport/Bifrost.Transport.csproj" />
+</Solution>

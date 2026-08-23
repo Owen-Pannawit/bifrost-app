@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Bifrost.Core\Bifrost.Core.csproj" />
+    <ProjectReference Include="..\Bifrost.Drivers\Bifrost.Drivers.csproj" />
+    <ProjectReference Include="..\Bifrost.Server\Bifrost.Server.csproj" />
+    <ProjectReference Include="..\Bifrost.Server.EmbedIO\Bifrost.Server.EmbedIO.csproj" />
+    <ProjectReference Include="..\Bifrost.Transport\Bifrost.Transport.csproj" />
+  </ItemGroup>
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>29</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Canonical constants — Docs/02-requirements/02-srs.md §4 -->
+    <ApplicationId>com.bearing.bifrost</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
+
+    <!--
+      android:targetSdkVersion is derived from the TFM platform version, not from a property — the
+      installed workload (36.1.43) yields 36. Pinning to something else means changing the TFM to
+      net10.0-android35.0, which is a deliberate decision, not a build-file tweak.
+
+      Target 36 with SupportedOSPlatformVersion 29 still satisfies NFR-401: the supported *range*
+      is API 29–35, and targeting a newer API does not narrow it.
+    -->
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <!--
+      DAY 1 FINDING (risk R-16 materialising).
+
+      The template ships TrimMode=full. That fails the Release build: EmbedIO's dependency
+      Swan.Lite is reflection-heavy and emits IL2104 trim warnings, which TreatWarningsAsErrors
+      turns into build errors.
+
+      TrimMode=partial trims only assemblies that declare IsTrimmable, so the BCL is still reduced
+      while third-party reflection users are left whole. The cost is APK size, tracked against the
+      30 MB budget in IMP-01 §6 and asserted by TC-814.
+
+      This is the price of ASP.NET Core being unavailable on Android (ADR-009). If the size budget
+      is ever missed because of it, GenHTTP is the documented alternative.
+    -->
+    <TrimMode>partial</TrimMode>
+    <PublishTrimmed>true</PublishTrimmed>
+    <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+</Project>

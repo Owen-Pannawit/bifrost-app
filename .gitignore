@@ -1,0 +1,31 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+
+# Android
+*.apk
+*.aab
+*.keystore
+*.jks
+keystore.properties
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# Node (SDK)
+node_modules/
+sdk/dist/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Local secrets — never commit
+*.local.json
+.env

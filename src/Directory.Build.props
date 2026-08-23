@@ -1,0 +1,26 @@
+<Project>
+
+  <!--
+    Applies to every project in src/ and tests/.
+    See Docs/04-implementation/02-project-structure.md §6 and 03-coding-standards.md §1.
+  -->
+  <PropertyGroup>
+    <LangVersion>13</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!--
+      Non-negotiable: a warning that can be ignored eventually is.
+      Nullable warnings in particular are how "this can be absent" stays checkable.
+      IMP-03 §1.
+    -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest</AnalysisLevel>
+
+    <Product>Bifrost</Product>
+    <Company>Bearing Team</Company>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+</Project>

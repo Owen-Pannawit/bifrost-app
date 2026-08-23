@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Day 1 spike screen. Deliberately plain: this exists to answer two questions, not to be the
+  product UI. The real screens arrive on Day 9 (DES-09).
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Bifrǫst — Day 1 spikes"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:paddingBottom="4dp" />
+
+    <TextView
+        android:id="@+id/serverStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Spike B: server not started"
+        android:textSize="14sp"
+        android:paddingBottom="12dp" />
+
+    <!-- 48dp minimum touch target, gloved use (NFR-504) -->
+    <Button
+        android:id="@+id/probeButton"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:text="Spike A — probe paired printers" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Probing sends a visible ESC/POS test line. Watch whether paper moves."
+        android:textSize="12sp"
+        android:paddingTop="4dp"
+        android:paddingBottom="8dp" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <TextView
+            android:id="@+id/output"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ready."
+            android:textSize="13sp"
+            android:typeface="monospace" />
+    </ScrollView>
+
+</LinearLayout>

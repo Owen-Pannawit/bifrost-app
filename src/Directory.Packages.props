@@ -1,0 +1,36 @@
+<Project>
+
+  <!--
+    Central package management — single source of truth for versions.
+    IMP-01 §2.4. Exact versions, no floating ranges: reproducible builds without a lock service.
+
+    Every package here is confirmed netstandard2.0 or net10.0-android compatible before adoption.
+    IMP-01 §7 — the rule exists because ASP.NET Core is NOT available on Android, and finding that
+    out late would have been expensive.
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup Label="Server — ADR-009">
+    <!-- netstandard2.0, proven on Xamarin.Android. Referenced ONLY by Bifrost.Server.EmbedIO. -->
+    <PackageVersion Include="EmbedIO" Version="3.5.2" />
+  </ItemGroup>
+
+  <ItemGroup Label="Testing">
+    <PackageVersion Include="xunit" Version="2.9.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageVersion Include="NSubstitute" Version="5.3.0" />
+  </ItemGroup>
+
+  <!--
+    Deferred until the day that needs them, to keep Day 1 honest:
+      Microsoft.Data.Sqlite + Dapper   — Phase 2 (durable queue)
+      ZXing.Net                        — only if a printer lacks native barcode support
+      JsonSchema.Net                   — Phase 3 (payload validation)
+      Serilog + Serilog.Sinks.File     — Phase 2
+      Xamarin.AndroidX.Security.Crypto — Phase 6 (pairing token)
+  -->
+
+</Project>
