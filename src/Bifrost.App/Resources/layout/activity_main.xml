@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Day 1 spike screen. Deliberately plain: this exists to answer two questions, not to be the
-  product UI. The real screens arrive on Day 9 (DES-09).
+  Demo screen. Deliberately plain: flat layouts, no animation, 56dp touch targets for gloved use
+  (NFR-504). The full screen set in DES-09 is Day 9 of the roadmap proper.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -13,37 +13,51 @@
         android:id="@+id/title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Bifrǫst — Day 1 spikes"
+        android:text="Bifrǫst"
         android:textSize="20sp"
-        android:textStyle="bold"
-        android:paddingBottom="4dp" />
+        android:textStyle="bold" />
 
     <TextView
         android:id="@+id/serverStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Spike B: server not started"
-        android:textSize="14sp"
+        android:text="Starting…"
+        android:textSize="15sp"
+        android:paddingTop="4dp"
         android:paddingBottom="12dp" />
 
-    <!-- 48dp minimum touch target, gloved use (NFR-504) -->
-    <Button
-        android:id="@+id/probeButton"
+    <TextView
         android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:text="Spike A — probe paired printers" />
+        android:layout_height="wrap_content"
+        android:text="PAIRED PRINTERS"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:paddingBottom="4dp" />
+
+    <!-- Bonded devices only. Pairing is delegated to Android settings (FR-401). -->
+    <Spinner
+        android:id="@+id/printerSpinner"
+        android:layout_width="match_parent"
+        android:layout_height="56dp" />
 
     <Button
         android:id="@+id/connectButton"
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:layout_marginTop="8dp"
-        android:text="Connect first paired printer" />
+        android:text="Connect" />
+
+    <Button
+        android:id="@+id/probeButton"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginTop="8dp"
+        android:text="Identify printer language" />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Probing sends a visible ESC/POS test line. Watch whether paper moves."
+        android:text="Identify sends a visible ESC/POS test line. Watch whether paper moves."
         android:textSize="12sp"
         android:paddingTop="4dp"
         android:paddingBottom="8dp" />

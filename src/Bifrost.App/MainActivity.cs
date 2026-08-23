@@ -1,15 +1,12 @@
-using System.Net;
 using System.Text;
 using Android;
+using Android.Bluetooth;
+using Android.Content;
 using Android.Content.PM;
+using Android.OS;
 using Android.Widget;
+using Bifrost.App.Services;
 using Bifrost.Core.Model;
-using Bifrost.Core.Printing;
-using Bifrost.Core.Testing;
-using Bifrost.Drivers.Cpcl;
-using Bifrost.Drivers.EscPos;
-using Bifrost.Server;
-using Bifrost.Server.EmbedIO;
 using Bifrost.Transport;
 using Bifrost.Transport.Classic;
 using Bifrost.Transport.Probe;
@@ -17,130 +14,169 @@ using Bifrost.Transport.Probe;
 namespace Bifrost.App;
 
 /// <summary>
-/// Day 1 spike screen, now also serving the real API.
+/// The demo screen: choose a printer, identify its language, connect.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Spike A</b> — which command language does each available printer speak? Both ESC/POS and
-/// CPCL drivers exist, so whichever answer comes back, Day 2 is unblocked.
+/// The activity is a <b>view over the service</b>, not the owner of anything. The bridge, the
+/// printer connection and the HTTP server all live in <see cref="BridgeService"/> so that they
+/// survive the operator switching to Chrome — which is a required step of the demo, not an edge
+/// case.
 /// </para>
 /// <para>
-/// <b>Spike B</b> — does EmbedIO load and serve on net10.0-android? ASP.NET Core does not run on
-/// Android at all, so the server is a third-party dependency on the critical path (R-16).
-/// </para>
-/// <para>
-/// This activity is scaffolding: composition root, spike runner and status display in one. The
-/// real screens and a proper foreground service arrive on Day 9.
+/// The full screen set in DES-09 is Day 9 of the roadmap proper. This covers what the demo needs.
 /// </para>
 /// </remarks>
 [Activity(Label = "@string/app_name", MainLauncher = true)]
-public class MainActivity : Activity
+public class MainActivity : Activity, IServiceConnection
 {
-    private const int BridgePort = 8437;
     private const int PermissionRequestCode = 1001;
-
-    /// <summary>
-    /// Demo allowlist. Loopback origins cover a page served from the device itself; the company
-    /// intranet origin is the one that will actually be used. No wildcards, ever — DES-08 §5.
-    /// </summary>
-    private static readonly string[] AllowedOrigins =
-    [
-        "http://localhost",
-        "http://127.0.0.1",
-        "http://intranet.company.local",
-    ];
 
     private TextView _output = null!;
     private TextView _serverStatus = null!;
-    private Button _probeButton = null!;
+    private Spinner _printerSpinner = null!;
     private Button _connectButton = null!;
+    private Button _probeButton = null!;
 
-    private IBridgeServer? _server;
-    private IPrinterTransport? _transport;
-    private PrintService? _printService;
+    private BridgeService? _bridge;
+    private IReadOnlyList<BluetoothDevice> _devices = [];
 
-    protected override async void OnCreate(Bundle? savedInstanceState)
+    /// <summary>Language learned from the probe, per Bluetooth address.</summary>
+    private readonly Dictionary<string, PrinterLanguage> _detectedLanguage = [];
+
+    protected override void OnCreate(Bundle? savedInstanceState)
     {
         base.OnCreate(savedInstanceState);
         SetContentView(Resource.Layout.activity_main);
 
         _output = FindViewById<TextView>(Resource.Id.output)!;
         _serverStatus = FindViewById<TextView>(Resource.Id.serverStatus)!;
-        _probeButton = FindViewById<Button>(Resource.Id.probeButton)!;
+        _printerSpinner = FindViewById<Spinner>(Resource.Id.printerSpinner)!;
         _connectButton = FindViewById<Button>(Resource.Id.connectButton)!;
+        _probeButton = FindViewById<Button>(Resource.Id.probeButton)!;
 
-        _probeButton.Click += async (_, _) => await RunPrinterProbeAsync();
-        _connectButton.Click += async (_, _) => await ConnectFirstPrinterAsync();
+        _connectButton.Click += async (_, _) => await ConnectSelectedAsync();
+        _probeButton.Click += async (_, _) => await ProbeSelectedAsync();
 
         RequestBluetoothPermissions();
-        await StartBridgeAsync();
+        StartAndBindService();
     }
 
-    // ---------------------------------------------------------------- bridge
+    // ---------------------------------------------------------------- service binding
 
-    /// <summary>
-    /// Spike B plus the real API. Starts against <see cref="MockTransport"/> so the endpoints are
-    /// reachable before any printer is connected — pressing Connect swaps in the real transport.
-    /// </summary>
-    private async Task StartBridgeAsync()
+    private void StartAndBindService()
     {
-        try
-        {
-            _transport = new MockTransport();
-            _printService = new PrintService(_transport, new EscPosDriver(), DemoProfile(PrinterLanguage.EscPos));
+        var intent = new Intent(this, typeof(BridgeService));
 
-            var server = new EmbedIoBridgeServer();
-            server.UseInterceptor(new CorsInterceptor(AllowedOrigins));
-            new BridgeApi(_printService, "0.1.0").MapRoutes(server);
+        // StartForegroundService, not StartService: from API 26 a background start must promote
+        // itself to the foreground promptly or the system kills it.
+        if (OperatingSystem.IsAndroidVersionAtLeast(26)) StartForegroundService(intent);
+        else StartService(intent);
 
-            // IPAddress.Loopback, never IPAddress.Any — FR-504.
-            await server.StartAsync(IPAddress.Loopback, BridgePort, CancellationToken.None);
-            _server = server;
-
-            _serverStatus.Text = $"✅ Spike B: EmbedIO listening on 127.0.0.1:{BridgePort}";
-            Log("Spike B PASSED — EmbedIO loaded and bound on net10.0-android.");
-            Log($"Verify in Chrome on this device: http://127.0.0.1:{BridgePort}/v1/status");
-            Log("Printing works against the mock until you press Connect.");
-        }
-        catch (Exception ex)
-        {
-            // Catch-all here and nowhere else: the point of a spike is to learn how it fails.
-            _serverStatus.Text = "❌ Spike B: EmbedIO failed to start";
-            Log($"Spike B FAILED — {ex.GetType().Name}: {ex.Message}");
-            Log("If this is a load failure, ADR-009's fallback is GenHTTP. Escalate R-16.");
-        }
+        BindService(intent, this, Bind.AutoCreate);
     }
 
-    // ---------------------------------------------------------------- Spike A
-
-    private async Task RunPrinterProbeAsync()
+    public void OnServiceConnected(ComponentName? name, IBinder? service)
     {
-        var devices = BluetoothAccess.BondedDevices;
-        if (devices.Count == 0)
+        if (service is not BridgeService.BridgeBinder binder) return;
+
+        _bridge = binder.Service;
+        _bridge.StateChanged += OnBridgeStateChanged;
+
+        LoadPairedDevices();
+        RefreshStatus();
+
+        Log(_bridge.IsServerListening
+            ? "Bridge listening on 127.0.0.1:8437 — open http://127.0.0.1:8437/v1/status in Chrome."
+            : $"Bridge failed to start: {_bridge.LastError}");
+    }
+
+    public void OnServiceDisconnected(ComponentName? name)
+    {
+        if (_bridge is not null) _bridge.StateChanged -= OnBridgeStateChanged;
+        _bridge = null;
+    }
+
+    private void OnBridgeStateChanged() => RunOnUiThread(RefreshStatus);
+
+    private void RefreshStatus()
+    {
+        if (_bridge is null) return;
+
+        _serverStatus.Text = _bridge switch
+        {
+            { IsServerListening: false } => $"❌ Bridge not running — {_bridge.LastError}",
+            { ConnectedPrinterName: { } printer } => $"✅ {printer} · {_bridge.ConnectedLanguage}",
+            _ => "⚠ Bridge running, no printer connected",
+        };
+    }
+
+    // ---------------------------------------------------------------- printer selection
+
+    private void LoadPairedDevices()
+    {
+        _devices = BluetoothAccess.BondedDevices;
+
+        if (_devices.Count == 0)
         {
             Log("No paired Bluetooth devices. Pair the printer in Android Bluetooth settings first.");
+        }
+
+        var labels = _devices
+            .Select(d => $"{d.Name ?? "(unnamed)"}  ·  {d.Address}")
+            .DefaultIfEmpty("(no paired devices)")
+            .ToArray();
+
+        _printerSpinner.Adapter = new ArrayAdapter<string>(
+            this, Android.Resource.Layout.SimpleSpinnerDropDownItem, labels);
+    }
+
+    private BluetoothDevice? Selected()
+    {
+        var index = _printerSpinner.SelectedItemPosition;
+        return index >= 0 && index < _devices.Count ? _devices[index] : null;
+    }
+
+    // ---------------------------------------------------------------- identify
+
+    /// <summary>
+    /// Probe the selected printer and remember what it answered, so Connect picks the right driver
+    /// without anyone editing code.
+    /// </summary>
+    private async Task ProbeSelectedAsync()
+    {
+        if (Selected() is not { Address: { } address } device)
+        {
+            Log("Select a printer first.");
             return;
         }
 
         _probeButton.Enabled = false;
         try
         {
-            Log($"Probing {devices.Count} paired device(s)…");
+            Log($"Probing {device.Name}…");
 
-            foreach (var device in devices)
+            await using var transport = new SppTransport();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+
+            var report = await new PrinterLanguageProbe(transport)
+                .ProbeAsync(address, device.Name ?? "(unnamed)", cts.Token);
+
+            Log(report.ToReportText());
+
+            if (report.InferredLanguage is { } language)
             {
-                if (device.Address is not { } address) continue;
-
-                await using var transport = new SppTransport();
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-
-                var report = await new PrinterLanguageProbe(transport)
-                    .ProbeAsync(address, device.Name ?? "(unnamed)", cts.Token);
-
-                Log(report.ToReportText());
+                _detectedLanguage[address] = language;
+                Log($"Detected {language}. Connect will use it automatically.");
             }
-
-            Log("── Spike A complete. The result decides which driver Day 2 uses.");
+            else
+            {
+                // Only the Zebra queries can be inferred. ESC/POS is confirmed by the operator
+                // seeing paper move, so it is offered rather than assumed.
+                _detectedLanguage[address] = PrinterLanguage.EscPos;
+                Log("No reply to the Zebra queries. If paper moved, it is ESC/POS — " +
+                    "Connect will assume that. If nothing moved, this printer is not supported yet.");
+            }
         }
         finally
         {
@@ -148,78 +184,46 @@ public class MainActivity : Activity
         }
     }
 
-    // ---------------------------------------------------------------- real printer
+    // ---------------------------------------------------------------- connect
 
-    /// <summary>Swap the mock for the first paired device and serve the API against it.</summary>
-    private async Task ConnectFirstPrinterAsync()
+    private async Task ConnectSelectedAsync()
     {
-        var device = BluetoothAccess.BondedDevices.FirstOrDefault();
-        if (device?.Address is not { } address)
+        if (_bridge is null)
         {
-            Log("No paired Bluetooth device to connect to.");
+            Log("Bridge service not bound yet.");
             return;
         }
+
+        if (Selected() is not { Address: { } address } device)
+        {
+            Log("Select a printer first.");
+            return;
+        }
+
+        // Probe result if we have one, ESC/POS otherwise — the commonest case, and Identify is
+        // there to correct it.
+        var language = _detectedLanguage.TryGetValue(address, out var detected)
+            ? detected
+            : PrinterLanguage.EscPos;
 
         _connectButton.Enabled = false;
         try
         {
-            Log($"Connecting to {device.Name} ({address})…");
+            Log($"Connecting to {device.Name} as {language}…");
 
-            var transport = new SppTransport();
-            var result = await transport.ConnectAsync(address, CancellationToken.None);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            var result = await _bridge.ConnectPrinterAsync(
+                address, device.Name ?? "(unnamed)", language, cts.Token);
 
-            if (result.IsFailure)
-            {
-                Log($"Connect failed: {result.Error.Code} — {result.Error.OperatorMessage}");
-                await transport.DisposeAsync();
-                return;
-            }
-
-            // Language is provisional until Spike A reports. Both drivers are implemented, so
-            // switching is a one-line change here.
-            var language = PrinterLanguage.EscPos;
-            IPrinterDriver driver = language == PrinterLanguage.Cpcl
-                ? new CpclDriver()
-                : new EscPosDriver();
-
-            if (_transport is not null) await _transport.DisposeAsync();
-            _transport = transport;
-            _printService = new PrintService(transport, driver, DemoProfile(language));
-
-            // Rebuild the API against the new service.
-            if (_server is not null) await _server.DisposeAsync();
-            var server = new EmbedIoBridgeServer();
-            server.UseInterceptor(new CorsInterceptor(AllowedOrigins));
-            new BridgeApi(_printService, "0.1.0").MapRoutes(server);
-            await server.StartAsync(IPAddress.Loopback, BridgePort, CancellationToken.None);
-            _server = server;
-
-            _serverStatus.Text = $"✅ Connected: {device.Name} · {language}";
-            Log($"Connected. The demo page will now print to {device.Name}.");
-        }
-        catch (Exception ex)
-        {
-            Log($"Connect failed: {ex.GetType().Name}: {ex.Message}");
+            Log(result.IsSuccess
+                ? $"Connected. The demo page will now print to {device.Name}."
+                : $"Connect failed: {result.Error.Code} — {result.Error.OperatorMessage}");
         }
         finally
         {
             _connectButton.Enabled = true;
         }
     }
-
-    private static PrinterProfile DemoProfile(PrinterLanguage language) => new(
-        Id: "demo",
-        BluetoothAddress: string.Empty,
-        DisplayName: "Demo printer",
-        TransportType: TransportType.BtClassic,
-        Language: language,
-        PrintWidthDots: language == PrinterLanguage.Cpcl
-            ? PrinterProfile.Widths.Label4InchAt203Dpi
-            : PrinterProfile.Widths.Receipt80mmAt203Dpi,
-        Dpi: 203,
-        MediaType: language == PrinterLanguage.Cpcl ? MediaType.LabelGap : MediaType.Continuous,
-        HasCutter: language != PrinterLanguage.Cpcl,
-        SupportsStatusQuery: true);
 
     // ---------------------------------------------------------------- permissions
 
@@ -248,6 +252,18 @@ public class MainActivity : Activity
         if (missing.Length > 0) RequestPermissions(missing, PermissionRequestCode);
     }
 
+    public override void OnRequestPermissionsResult(
+        int requestCode, string[] permissions, Permission[] grantResults)
+    {
+        base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode != PermissionRequestCode) return;
+
+        // Bonded devices are unreadable without BLUETOOTH_CONNECT, so the list must be rebuilt
+        // once permission arrives or the spinner stays empty for no visible reason.
+        LoadPairedDevices();
+    }
+
     // ---------------------------------------------------------------- plumbing
 
     private void Log(string message)
@@ -263,8 +279,19 @@ public class MainActivity : Activity
 
     protected override void OnDestroy()
     {
-        _ = _server?.DisposeAsync();
-        _ = _transport?.DisposeAsync();
+        if (_bridge is not null) _bridge.StateChanged -= OnBridgeStateChanged;
+
+        // Unbind only. The service keeps running so the printer connection survives the operator
+        // switching to Chrome — the entire reason it is a foreground service.
+        try
+        {
+            UnbindService(this);
+        }
+        catch (Java.Lang.IllegalArgumentException)
+        {
+            // Not bound. Nothing to do.
+        }
+
         base.OnDestroy();
     }
 }

@@ -3,15 +3,17 @@
   "version": "0.1.0",
   "description": "Print to a Bluetooth printer from a web page, via the Bifrost bridge.",
   "type": "module",
-  "main": "./dist/bifrost.cjs",
-  "module": "./dist/bifrost.esm.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/bifrost.esm.js",
-      "require": "./dist/bifrost.cjs"
-    }
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "//browser": "dist/index.global.js exposes the global `Bifrost` for a plain <script> tag (FR-704)",
+    "./global": "./dist/index.global.js"
   },
   "files": ["dist"],
   "scripts": {

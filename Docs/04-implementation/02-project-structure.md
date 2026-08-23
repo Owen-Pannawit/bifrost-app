@@ -155,6 +155,8 @@ Bifrost.Core/
 │   ├── IPrinterTransport.cs
 │   ├── DriverRegistry.cs
 │   └── ConnectionManager.cs
+├── Testing/
+│   └── MockTransport.cs          see the note below
 ├── Events/
 │   ├── BifrostEvent.cs
 │   └── EventHub.cs               Channels-based fan-out
@@ -186,9 +188,13 @@ Bifrost.Transport/
 │   ├── BleTransport.cs
 │   ├── GattOperationQueue.cs     serialises every GATT call — DES-06 §7.3 rule 6
 │   └── ChunkWriter.cs            MTU chunking + flow control
-├── Mock/MockTransport.cs · MockScenario.cs
 └── BluetoothPermissions.cs       API 29–35 permission model differences
 ```
+
+> **`MockTransport` lives in `Bifrost.Core/Testing/`, not here.** This project targets
+> `net10.0-android`, so a platform-free test project cannot reference it — which would defeat
+> NFR-602, the requirement the mock exists to satisfy. It implements a Core interface and touches
+> no Android API, so Core is where it belongs. Corrected during implementation.
 
 `GattOperationQueue` and `ChunkWriter` are separate classes rather than private methods because they
 encode the eight non-negotiable rules from
