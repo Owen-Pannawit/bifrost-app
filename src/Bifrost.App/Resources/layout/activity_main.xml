@@ -26,6 +26,43 @@
         android:paddingTop="4dp"
         android:paddingBottom="12dp" />
 
+    <!--
+      Battery-optimisation warning. Hidden when exempt, so its presence always means something.
+      R-03: this is the most likely cause of a connection that dies silently in the field.
+    -->
+    <LinearLayout
+        android:id="@+id/batteryWarning"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:background="#FFF3E0"
+        android:padding="12dp"
+        android:layout_marginBottom="12dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="⚠ Battery optimisation is on"
+            android:textStyle="bold"
+            android:textSize="15sp"
+            android:textColor="#E65100" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Android may switch the printer connection off in the background. Set Bifrǫst to Unrestricted."
+            android:textSize="13sp"
+            android:paddingTop="4dp" />
+
+        <Button
+            android:id="@+id/batteryButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:text="Open battery settings" />
+    </LinearLayout>
+
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

@@ -4,6 +4,7 @@ using Android.Bluetooth;
 using Android.Content;
 using Android.Content.PM;
 using Android.OS;
+using Android.Views;
 using Android.Widget;
 using Bifrost.App.Services;
 using Bifrost.Core.Model;
@@ -37,6 +38,7 @@ public class MainActivity : Activity, IServiceConnection
     private Spinner _printerSpinner = null!;
     private Button _connectButton = null!;
     private Button _probeButton = null!;
+    private View _batteryWarning = null!;
 
     private BridgeService? _bridge;
     private IReadOnlyList<BluetoothDevice> _devices = [];
@@ -54,13 +56,55 @@ public class MainActivity : Activity, IServiceConnection
         _printerSpinner = FindViewById<Spinner>(Resource.Id.printerSpinner)!;
         _connectButton = FindViewById<Button>(Resource.Id.connectButton)!;
         _probeButton = FindViewById<Button>(Resource.Id.probeButton)!;
+        _batteryWarning = FindViewById<View>(Resource.Id.batteryWarning)!;
 
         _connectButton.Click += async (_, _) => await ConnectSelectedAsync();
         _probeButton.Click += async (_, _) => await ProbeSelectedAsync();
 
+        FindViewById<Button>(Resource.Id.batteryButton)!.Click += (_, _) =>
+        {
+            if (!BatteryOptimisation.OpenSettings(this))
+            {
+                Log("This device has no battery-optimisation screen. On Xiaomi, Huawei or Oppo, " +
+                    "enable Autostart for Bifrǫst instead.");
+            }
+        };
+
         RequestBluetoothPermissions();
         StartAndBindService();
     }
+
+    protected override void OnResume()
+    {
+        base.OnResume();
+
+        // Re-checked on every resume: the operator may have just come back from the settings
+        // screen, and the banner going away is the confirmation that it worked.
+        RefreshBatteryWarning();
+    }
+
+    /// <summary>
+    /// Show the warning only while Android is allowed to sleep the app.
+    /// </summary>
+    /// <remarks>
+    /// Battery optimisation kills the foreground service and drops the Bluetooth link silently —
+    /// the app looks healthy and printing simply stops (R-03). Making it visible here is cheaper
+    /// than diagnosing it by phone later.
+    /// </remarks>
+    private void RefreshBatteryWarning()
+    {
+        var exempt = BatteryOptimisation.IsExempt(this);
+        _batteryWarning.Visibility = exempt ? ViewStates.Gone : ViewStates.Visible;
+
+        if (!exempt && !_batteryWarningLogged)
+        {
+            _batteryWarningLogged = true;
+            Log("Battery optimisation is ON. The printer connection may be dropped in the " +
+                "background — set Bifrǫst to Unrestricted before demonstrating.");
+        }
+    }
+
+    private bool _batteryWarningLogged;
 
     // ---------------------------------------------------------------- service binding
 
