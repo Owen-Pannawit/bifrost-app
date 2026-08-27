@@ -210,6 +210,29 @@ public sealed class BridgeService : Service
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Drop the printer link, leaving the bridge serving against the mock.
+    /// </summary>
+    /// <remarks>
+    /// Used before reconnecting under a different language. The printer allows one link at a time,
+    /// and a half-closed socket is the difference between a clean reconnect and a connect that
+    /// fails for reasons nobody can see.
+    /// </remarks>
+    public async Task DisconnectPrinterAsync()
+    {
+        if (_transport is not null) await _transport.DisposeAsync().ConfigureAwait(false);
+
+        _transport = new MockTransport();
+        _printService = new PrintService(
+            _transport, new EscPosDriver(), DemoProfile(PrinterLanguage.EscPos));
+
+        ConnectedPrinterName = null;
+        ConnectedLanguage = null;
+
+        await RestartServerAsync().ConfigureAwait(false);
+        Publish(BridgeUiState.Attention, "Bifrǫst — no printer", "Open the app and choose a printer.");
+    }
+
     /// <summary>Connect a printer and rebuild the API against it.</summary>
     public async Task<Result> ConnectPrinterAsync(
         string address, string displayName, PrinterLanguage language, CancellationToken ct)

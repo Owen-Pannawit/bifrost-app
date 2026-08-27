@@ -30,8 +30,10 @@ public sealed class EscPosDriver : IPrinterDriver
         {
             Symbology.Code128, Symbology.Code39, Symbology.Ean13, Symbology.Itf, Symbology.UpcA,
         },
-        SupportsQr: false,          // model-dependent; not claimed for the demo
-        SupportsImages: false,      // deferred to Phase 3
+        // QR via GS ( k is model-dependent on cheap clones; claimed, but the first thing to
+        // suspect if a symbol never appears on unfamiliar hardware.
+        SupportsQr: true,
+        SupportsImages: true,       // GS v 0 raster
         SupportsCut: true,
         SupportsStatusQuery: true,  // best-effort — many clones ignore DLE EOT
         SupportsInvert: true,
@@ -71,6 +73,14 @@ public sealed class EscPosDriver : IPrinterDriver
 
             case PrintBlock.Barcode barcode:
                 EmitBarcode(output, barcode);
+                break;
+
+            case PrintBlock.QrCode qr:
+                EmitQr(output, qr);
+                break;
+
+            case PrintBlock.Image image:
+                EmitImage(output, image);
                 break;
 
             case PrintBlock.Feed feed:
@@ -119,6 +129,35 @@ public sealed class EscPosDriver : IPrinterDriver
         output.AddRange(EscPosCommands.Barcode(TypeByte(barcode.Symbology), data));
         output.Add(EscPosCommands.Lf);
     }
+
+    private static void EmitQr(List<byte> output, PrintBlock.QrCode qr)
+    {
+        output.AddRange(EscPosCommands.Align(AlignByte(qr.Align)));
+        output.AddRange(EscPosCommands.QrModuleSize(qr.Scale));
+        output.AddRange(EscPosCommands.QrErrorCorrection(EccByte(qr.ErrorCorrection)));
+        output.AddRange(EscPosCommands.QrStore(Ascii.GetBytes(qr.Value)));
+        output.AddRange(EscPosCommands.QrPrint());
+        output.Add(EscPosCommands.Lf);
+    }
+
+    private static void EmitImage(List<byte> output, PrintBlock.Image image)
+    {
+        var bitmap = image.Bitmap;
+
+        output.AddRange(EscPosCommands.Align(AlignByte(image.Align)));
+        output.AddRange(EscPosCommands.RasterHeader(bitmap.BytesPerRow, bitmap.Height));
+        output.AddRange(bitmap.Data);
+        output.Add(EscPosCommands.Lf);
+    }
+
+    private static byte EccByte(EccLevel level) => level switch
+    {
+        EccLevel.L => 48,
+        EccLevel.M => 49,
+        EccLevel.Q => 50,
+        EccLevel.H => 51,
+        _ => 50,
+    };
 
     private static byte AlignByte(Alignment align) => align switch
     {

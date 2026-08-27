@@ -71,6 +71,13 @@ public sealed class ElementDto
     [JsonPropertyName("showText")]
     public bool? ShowText { get; set; }
 
+    // qr
+    [JsonPropertyName("scale")]
+    public int? Scale { get; set; }
+
+    [JsonPropertyName("errorCorrection")]
+    public string? ErrorCorrection { get; set; }
+
     // feed
     [JsonPropertyName("lines")]
     public int? Lines { get; set; }

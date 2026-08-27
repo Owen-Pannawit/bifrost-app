@@ -76,6 +76,7 @@ public sealed class DslCompiler(int defaultWidthDots, MediaType defaultMediaType
         {
             "text" => CompileText(e, path),
             "barcode" => CompileBarcode(e, path),
+            "qr" => CompileQr(e, path),
             "feed" => CompileFeed(e, path),
             "cut" => Result<PrintBlock>.Ok(new PrintBlock.Cut(
                 string.Equals(e.Mode, "PARTIAL", StringComparison.OrdinalIgnoreCase)
@@ -150,6 +151,47 @@ public sealed class DslCompiler(int defaultWidthDots, MediaType defaultMediaType
         return Result<PrintBlock>.Ok(new PrintBlock.Barcode(
             symbology.Value, e.Value, e.HeightDots ?? 80, moduleWidth, e.ShowText ?? true, align));
     }
+
+    private static Result<PrintBlock> CompileQr(ElementDto e, string path)
+    {
+        if (string.IsNullOrEmpty(e.Value))
+        {
+            return new PrinterError.ValidationError($"{path}.value", "value is required for a qr element.");
+        }
+
+        // The QR spec's ceiling for byte mode. Beyond it the symbol cannot be built at all, so
+        // catching it here beats a printer that silently prints nothing.
+        if (System.Text.Encoding.UTF8.GetByteCount(e.Value) > 2953)
+        {
+            return new PrinterError.ValidationError($"{path}.value", "QR data must not exceed 2953 bytes.");
+        }
+
+        var scale = e.Scale ?? 5;
+        if (scale is < 1 or > 16)
+        {
+            return new PrinterError.ValidationError($"{path}.scale", "scale must be between 1 and 16.");
+        }
+
+        var ecc = ParseEcc(e.ErrorCorrection);
+        if (ecc is null)
+        {
+            return new PrinterError.ValidationError(
+                $"{path}.errorCorrection", "errorCorrection must be L, M, Q or H.");
+        }
+
+        return Result<PrintBlock>.Ok(new PrintBlock.QrCode(
+            e.Value, scale, ecc.Value, ParseAlign(e.Align) ?? Alignment.Center));
+    }
+
+    private static EccLevel? ParseEcc(string? value) => value?.ToUpperInvariant() switch
+    {
+        null or "" => EccLevel.Q,
+        "L" => EccLevel.L,
+        "M" => EccLevel.M,
+        "Q" => EccLevel.Q,
+        "H" => EccLevel.H,
+        _ => null,
+    };
 
     private static Result<PrintBlock> CompileFeed(ElementDto e, string path)
     {

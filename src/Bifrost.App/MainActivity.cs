@@ -36,15 +36,21 @@ public class MainActivity : Activity, IServiceConnection
     private TextView _serverStatus = null!;
     private Spinner _printerSpinner = null!;
     private Button _connectButton = null!;
-    private Button _probeButton = null!;
     private Button _testPrintButton = null!;
+    private Button _switchButton = null!;
+    private Spinner _languageSpinner = null!;
     private View _batteryWarning = null!;
 
     private BridgeService? _bridge;
     private IReadOnlyList<BluetoothDevice> _devices = [];
 
-    /// <summary>Language learned from the probe, per Bluetooth address.</summary>
-    private readonly Dictionary<string, PrinterLanguage> _detectedLanguage = [];
+    /// <summary>
+    /// The languages offered in the spinner. Every driver we have is listed, with the one the
+    /// printer reported selected — a printer that answers wrongly should never leave the operator
+    /// unable to choose the language that actually works.
+    /// </summary>
+    private static readonly PrinterLanguage[] Languages =
+        [PrinterLanguage.Cpcl, PrinterLanguage.EscPos, PrinterLanguage.Zpl];
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
@@ -55,13 +61,15 @@ public class MainActivity : Activity, IServiceConnection
         _serverStatus = FindViewById<TextView>(Resource.Id.serverStatus)!;
         _printerSpinner = FindViewById<Spinner>(Resource.Id.printerSpinner)!;
         _connectButton = FindViewById<Button>(Resource.Id.connectButton)!;
-        _probeButton = FindViewById<Button>(Resource.Id.probeButton)!;
         _batteryWarning = FindViewById<View>(Resource.Id.batteryWarning)!;
-
         _testPrintButton = FindViewById<Button>(Resource.Id.testPrintButton)!;
+        _switchButton = FindViewById<Button>(Resource.Id.switchButton)!;
+        _languageSpinner = FindViewById<Spinner>(Resource.Id.languageSpinner)!;
 
-        _connectButton.Click += async (_, _) => await ConnectSelectedAsync();
-        _probeButton.Click += async (_, _) => await ProbeSelectedAsync();
+        PopulateLanguages(PrinterLanguage.Cpcl);
+
+        _connectButton.Click += async (_, _) => await ConnectSelectedAsync(null);
+        _switchButton.Click += async (_, _) => await SwitchLanguageAsync();
         _testPrintButton.Click += async (_, _) => await TestPrintAsync();
 
         FindViewById<Button>(Resource.Id.sgdButton)!.Click += async (_, _) =>
@@ -197,62 +205,46 @@ public class MainActivity : Activity, IServiceConnection
         return index >= 0 && index < _devices.Count ? _devices[index] : null;
     }
 
-    // ---------------------------------------------------------------- identify
+    // ---------------------------------------------------------------- language list
 
-    /// <summary>
-    /// Probe the selected printer and remember what it answered, so Connect picks the right driver
-    /// without anyone editing code.
-    /// </summary>
-    private async Task ProbeSelectedAsync()
+    private void PopulateLanguages(PrinterLanguage selected)
     {
-        if (Selected() is not { Address: { } address } device)
-        {
-            Log("Select a printer first.");
-            return;
-        }
+        var labels = Languages
+            .Select(l => l == selected ? $"{Describe(l)}   ← detected" : Describe(l))
+            .ToArray();
 
-        if (_bridge is null)
-        {
-            Log("Bridge service not bound yet.");
-            return;
-        }
+        _languageSpinner.Adapter = new ArrayAdapter<string>(
+            this, Android.Resource.Layout.SimpleSpinnerDropDownItem, labels);
 
-        _probeButton.Enabled = false;
-        try
-        {
-            Log($"Probing {device.Name}…");
+        _languageSpinner.SetSelection(Array.IndexOf(Languages, selected));
+    }
 
-            // Through the service, so the probe reuses the link the bridge already holds. A mobile
-            // printer accepts one connection at a time; opening a second one fails before reaching
-            // the printer and looks exactly like a printer that answered nothing.
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-            var report = await _bridge.ProbeLanguageAsync(address, device.Name ?? "(unnamed)", cts.Token);
+    private static string Describe(PrinterLanguage language) => language switch
+    {
+        PrinterLanguage.Cpcl => "CPCL  (Zebra ZQ/QLn mobile)",
+        PrinterLanguage.EscPos => "ESC/POS  (most low-cost receipt printers)",
+        PrinterLanguage.Zpl => "ZPL  (Zebra label)",
+        _ => language.ToString(),
+    };
 
-            Log(report.ToReportText());
-
-            if (report.InferredLanguage is { } language)
-            {
-                _detectedLanguage[address] = language;
-                Log($"Detected {language}. Connect will use it automatically.");
-            }
-            else
-            {
-                // Only the Zebra queries can be inferred. ESC/POS is confirmed by the operator
-                // seeing paper move, so it is offered rather than assumed.
-                _detectedLanguage[address] = PrinterLanguage.EscPos;
-                Log("No reply to the Zebra queries. If paper moved, it is ESC/POS — " +
-                    "Connect will assume that. If nothing moved, this printer is not supported yet.");
-            }
-        }
-        finally
-        {
-            _probeButton.Enabled = true;
-        }
+    private PrinterLanguage SelectedLanguage()
+    {
+        var index = _languageSpinner.SelectedItemPosition;
+        return index >= 0 && index < Languages.Length ? Languages[index] : PrinterLanguage.Cpcl;
     }
 
     // ---------------------------------------------------------------- connect
 
-    private async Task ConnectSelectedAsync()
+    /// <summary>
+    /// Connect, then ask the printer what it speaks and offer that as the selected language.
+    /// </summary>
+    /// <remarks>
+    /// Checking after connecting rather than before is not a detail. A mobile printer accepts one
+    /// connection at a time, so a probe that opens its own link fails before reaching the printer
+    /// and reports silence — which reads as a printer that cannot answer, and is how this project
+    /// spent a day driving a CPCL printer with an ESC/POS driver.
+    /// </remarks>
+    private async Task ConnectSelectedAsync(PrinterLanguage? forceLanguage)
     {
         if (_bridge is null)
         {
@@ -266,29 +258,81 @@ public class MainActivity : Activity, IServiceConnection
             return;
         }
 
-        // Probe result if we have one, ESC/POS otherwise — the commonest case, and Identify is
-        // there to correct it.
-        var language = _detectedLanguage.TryGetValue(address, out var detected)
-            ? detected
-            : PrinterLanguage.EscPos;
-
+        var name = device.Name ?? "(unnamed)";
         _connectButton.Enabled = false;
+        _switchButton.Enabled = false;
+
         try
         {
-            Log($"Connecting to {device.Name} as {language}…");
+            var language = forceLanguage ?? SelectedLanguage();
+            Log($"Connecting to {name} as {language}…");
 
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-            var result = await _bridge.ConnectPrinterAsync(
-                address, device.Name ?? "(unnamed)", language, cts.Token);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            var result = await _bridge.ConnectPrinterAsync(address, name, language, cts.Token);
 
-            Log(result.IsSuccess
-                ? $"Connected. The demo page will now print to {device.Name}."
-                : $"Connect failed: {result.Error.Code} — {result.Error.OperatorMessage}");
+            if (result.IsFailure)
+            {
+                Log($"Connect failed: {result.Error.Code} — {result.Error.OperatorMessage}");
+                return;
+            }
+
+            Log($"Connected as {language}.");
+
+            // Only worth asking when the operator has not already overridden the answer.
+            if (forceLanguage is null) await CheckLanguageAsync(address, name, language, cts.Token);
         }
         finally
         {
             _connectButton.Enabled = true;
+            _switchButton.Enabled = true;
         }
+    }
+
+    /// <summary>Ask the printer what it speaks and reflect it in the list.</summary>
+    private async Task CheckLanguageAsync(
+        string address, string name, PrinterLanguage current, CancellationToken ct)
+    {
+        Log("Checking printer language…");
+
+        var report = await _bridge!.ProbeLanguageAsync(address, name, ct);
+        Log(report.ToReportText());
+
+        if (report.InferredLanguage is not { } detected)
+        {
+            Log("The printer did not identify itself. Pick a language below and press Switch — " +
+                "CPCL for a Zebra, ESC/POS for most others.");
+            return;
+        }
+
+        PopulateLanguages(detected);
+
+        if (detected == current)
+        {
+            Log($"Connected with the right driver ({detected}).");
+            return;
+        }
+
+        Log($"Printer reports {detected} but we connected as {current}. Press Switch to reconnect.");
+    }
+
+    /// <summary>Reconnect using the language the operator picked.</summary>
+    private async Task SwitchLanguageAsync()
+    {
+        if (_bridge is null)
+        {
+            Log("Bridge service not bound yet.");
+            return;
+        }
+
+        var language = SelectedLanguage();
+        Log($"Switching to {language} — disconnecting…");
+
+        // Disconnect first rather than reconnecting over the top. The printer allows one link, and
+        // a half-closed socket is the difference between a clean reconnect and a connect that
+        // fails for reasons nobody can see.
+        await _bridge.DisconnectPrinterAsync();
+
+        await ConnectSelectedAsync(language);
     }
 
     // ---------------------------------------------------------------- test print

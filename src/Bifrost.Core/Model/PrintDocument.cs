@@ -72,10 +72,35 @@ public abstract record PrintBlock(Alignment Align)
             => new(symbology, value, heightDots, moduleWidth, showText, align);
     }
 
+    public sealed record QrCode(
+        string Value,
+        int Scale,
+        EccLevel ErrorCorrection,
+        Alignment Align) : PrintBlock(Align)
+    {
+        /// <remarks>
+        /// Error correction defaults to Q, not the M that most libraries use. A label lives on a
+        /// bin in a warehouse: it gets scuffed, taped over and handled with gloves, and the extra
+        /// redundancy costs a few millimetres.
+        /// </remarks>
+        public static QrCode Of(
+            string value,
+            int scale = 5,
+            EccLevel errorCorrection = EccLevel.Q,
+            Alignment align = Alignment.Center)
+            => new(value, scale, errorCorrection, align);
+    }
+
+    public sealed record Image(
+        MonochromeBitmap Bitmap,
+        Alignment Align) : PrintBlock(Align);
+
     public sealed record Feed(int Dots, Alignment Align = Alignment.Left) : PrintBlock(Align);
 
     public sealed record Cut(CutMode Mode, Alignment Align = Alignment.Left) : PrintBlock(Align);
 
-    // QrCode, Image and Rule are defined by DES-05 §6 but not implemented for the demo.
-    // Phase 3 of the roadmap adds them. See the plan's "What is deliberately not built".
+    // Rule is defined by DES-05 §6 but not implemented for the demo.
 }
+
+/// <summary>QR error-correction level. Higher survives more damage at the cost of size.</summary>
+public enum EccLevel { L, M, Q, H }

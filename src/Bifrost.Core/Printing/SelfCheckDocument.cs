@@ -21,6 +21,12 @@ public static class SelfCheckDocument
     /// <summary>The value encoded in the test barcode. Fixed, so a scan can be checked against it.</summary>
     public const string BarcodeValue = "6205-2RS";
 
+    /// <summary>
+    /// The value encoded in the test QR. Carries more than the barcode on purpose — a QR that
+    /// only holds a part number proves the symbol printed, not that a realistic payload fits.
+    /// </summary>
+    public const string QrValue = "PN=6205-2RS;LOT=L2408-0231;QTY=50";
+
     public static PrintDocument Create(PrinterProfile profile, string printerName, string timestamp)
     {
         ArgumentNullException.ThrowIfNull(profile);
@@ -47,15 +53,21 @@ public static class SelfCheckDocument
                 // an old label is easily mistaken for a new one, and a failure looks like a success.
                 new PrintBlock.Text(timestamp, align: Alignment.Center),
 
-                new PrintBlock.Feed(16),
-
                 // The point of the exercise: a barcode a scanner must read first time.
                 // moduleWidth 3 rather than 2 — wider bars survive a dirty printhead and a low
                 // battery, and an unscannable label is the defect this project must not ship.
-                PrintBlock.Barcode.Of(Symbology.Code128, BarcodeValue, heightDots: 90, moduleWidth: 3),
+                PrintBlock.Barcode.Of(Symbology.Code128, BarcodeValue, heightDots: 70, moduleWidth: 3),
 
-                new PrintBlock.Text("scan the barcode above", align: Alignment.Center),
-                new PrintBlock.Feed(72),
+                // QR and image exercise the two paths a barcode does not: 2-D symbol generation
+                // and raster transfer. Each fails independently, so a test print covering only
+                // text and a barcode leaves half the driver unproven.
+                PrintBlock.QrCode.Of(QrValue, scale: 4),
+
+                new PrintBlock.Image(MonochromeBitmap.TestPattern(80), Alignment.Center),
+
+                // Just enough to clear the tear bar. This button gets pressed repeatedly while
+                // diagnosing, and every press costs paper.
+                new PrintBlock.Feed(32),
             ]);
     }
 }

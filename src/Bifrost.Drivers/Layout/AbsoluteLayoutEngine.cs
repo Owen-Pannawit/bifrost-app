@@ -85,6 +85,13 @@ public sealed class AbsoluteLayoutEngine(int widthDots, int baseCharHeightDots =
             (b.Value.Length + 4) * 11 * b.ModuleWidth,
             b.HeightDots + (b.ShowText ? baseCharHeightDots : 0)),
 
+        // A QR is square. Version 1 is 21 modules and grows by 4 per version; 33 is a middle
+        // estimate that keeps a realistic part-number payload from overlapping what follows.
+        // Over-estimating only costs blank paper; under-estimating overprints the next block.
+        PrintBlock.QrCode q => (33 * q.Scale, 33 * q.Scale),
+
+        PrintBlock.Image i => (i.Bitmap.Width, i.Bitmap.Height),
+
         PrintBlock.Feed f => (0, f.Dots),
 
         PrintBlock.Cut => (0, 0),

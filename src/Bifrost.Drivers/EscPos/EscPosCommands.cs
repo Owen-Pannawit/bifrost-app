@@ -77,6 +77,46 @@ internal static class EscPosCommands
         public const byte Code128 = 73;
     }
 
+    // ---------------------------------------------------------------- QR (GS ( k)
+
+    /// <summary>GS ( k — store the QR data. pL/pH cover the 3 header bytes plus the payload.</summary>
+    public static byte[] QrStore(ReadOnlySpan<byte> data)
+    {
+        var length = data.Length + 3;
+        var result = new byte[8 + data.Length];
+        result[0] = Gs;
+        result[1] = (byte)'(';
+        result[2] = (byte)'k';
+        result[3] = (byte)(length & 0xFF);
+        result[4] = (byte)(length >> 8);
+        result[5] = 49;     // cn — QR function group
+        result[6] = 80;     // fn 80 — store data
+        result[7] = 48;     // m
+        data.CopyTo(result.AsSpan(8));
+        return result;
+    }
+
+    /// <summary>GS ( k fn 67 — module size in dots, 1–16.</summary>
+    public static byte[] QrModuleSize(int scale) =>
+        [Gs, (byte)'(', (byte)'k', 3, 0, 49, 67, (byte)Math.Clamp(scale, 1, 16)];
+
+    /// <summary>GS ( k fn 69 — error correction: 48=L, 49=M, 50=Q, 51=H.</summary>
+    public static byte[] QrErrorCorrection(byte level) =>
+        [Gs, (byte)'(', (byte)'k', 3, 0, 49, 69, level];
+
+    /// <summary>GS ( k fn 81 — print the stored symbol.</summary>
+    public static byte[] QrPrint() => [Gs, (byte)'(', (byte)'k', 3, 0, 49, 81, 48];
+
+    // ---------------------------------------------------------------- raster (GS v 0)
+
+    /// <summary>GS v 0 m xL xH yL yH — raster bit image, normal size.</summary>
+    public static byte[] RasterHeader(int bytesPerRow, int heightDots) =>
+    [
+        Gs, (byte)'v', (byte)'0', 0,
+        (byte)(bytesPerRow & 0xFF), (byte)(bytesPerRow >> 8),
+        (byte)(heightDots & 0xFF), (byte)(heightDots >> 8),
+    ];
+
     /// <summary>ESC d n — feed n lines.</summary>
     public static byte[] FeedLines(int lines) => [Esc, (byte)'d', (byte)Math.Clamp(lines, 0, 255)];
 

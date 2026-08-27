@@ -141,6 +141,57 @@ public sealed class CpclDriverTests
     }
 
     [Fact]
+    public void A_QR_is_emitted_as_a_positioned_block_terminated_by_ENDQR()
+    {
+        var text = Render(Doc(PrintBlock.QrCode.Of("PN=6205-2RS;LOT=L2408", scale: 4)));
+        var lines = text.Split("\r\n");
+
+        var start = Array.FindIndex(lines, l => l.StartsWith("B QR ", StringComparison.Ordinal));
+        Assert.True(start >= 0, "Expected a 'B QR' block");
+
+        // B QR <x> <y> M 2 U <scale>
+        var parts = lines[start].Split(' ');
+        Assert.Equal("M", parts[4]);
+        Assert.Equal("2", parts[5]);       // model 2
+        Assert.Equal("4", parts[7]);       // scale
+
+        // The data line carries the ECC level and the automatic data-mode marker.
+        Assert.StartsWith("QA,", lines[start + 1], StringComparison.Ordinal);
+        Assert.Contains("PN=6205-2RS", lines[start + 1], StringComparison.Ordinal);
+
+        // Without ENDQR the printer keeps consuming following commands as QR data.
+        Assert.Equal("ENDQR", lines[start + 2]);
+    }
+
+    [Theory]
+    [InlineData(EccLevel.L, "LA,")]
+    [InlineData(EccLevel.M, "MA,")]
+    [InlineData(EccLevel.Q, "QA,")]
+    [InlineData(EccLevel.H, "HA,")]
+    public void Each_error_correction_level_reaches_the_data_line(EccLevel level, string expected)
+    {
+        var text = Render(Doc(PrintBlock.QrCode.Of("X", errorCorrection: level)));
+
+        Assert.Contains(expected, text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_image_is_emitted_as_EG_with_byte_width_and_uppercase_hex()
+    {
+        var bitmap = new MonochromeBitmap(16, 4);
+        bitmap.Set(0, 0);       // 0x80 in the first byte
+        bitmap.Set(8, 0);       // 0x80 in the second
+
+        var text = Render(Doc(new PrintBlock.Image(bitmap, Alignment.Left)));
+        var line = text.Split("\r\n").Single(l => l.StartsWith("EG ", StringComparison.Ordinal));
+        var parts = line.Split(' ');
+
+        Assert.Equal("2", parts[1]);    // bytes per row, not dots — the usual mistake
+        Assert.Equal("4", parts[2]);    // height in dots
+        Assert.StartsWith("8080", parts[5], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void FR_607_identifies_itself_from_a_Zebra_identity_response()
     {
         var driver = new CpclDriver();

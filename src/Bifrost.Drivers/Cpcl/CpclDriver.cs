@@ -32,7 +32,7 @@ public sealed class CpclDriver : IPrinterDriver
             Symbology.Code128, Symbology.Code39, Symbology.Ean13, Symbology.Itf, Symbology.UpcA,
         },
         SupportsQr: true,
-        SupportsImages: false,      // EG/CG deferred to Phase 3
+        SupportsImages: true,       // EG
         SupportsCut: false,         // ZQ-family mobile printers rarely have a cutter
         SupportsStatusQuery: true,  // Link-OS firmware
         SupportsInvert: false,
@@ -64,6 +64,14 @@ public sealed class CpclDriver : IPrinterDriver
 
                 case PrintBlock.Barcode b:
                     EmitBarcode(sb, b, p);
+                    break;
+
+                case PrintBlock.QrCode q:
+                    EmitQr(sb, q, p);
+                    break;
+
+                case PrintBlock.Image img:
+                    EmitImage(sb, img, p);
                     break;
 
                 case PrintBlock.Cut:
@@ -102,6 +110,44 @@ public sealed class CpclDriver : IPrinterDriver
             sb.Append("BARCODE-TEXT 7 0 5").Append(Crlf);
         }
     }
+
+    private static void EmitQr(StringBuilder sb, PrintBlock.QrCode qr, PositionedBlock p)
+    {
+        // B QR <x> <y> M 2 U <scale>
+        //   M 2  — model 2, the ubiquitous one
+        //   U    — the data line that follows is unformatted
+        sb.Append(CultureInfo.InvariantCulture,
+            $"B QR {p.X} {p.Y} M 2 U {qr.Scale}").Append(Crlf);
+
+        // The data line's prefix is <ecc-level>A,<data> — 'A' selects automatic data mode.
+        sb.Append(CultureInfo.InvariantCulture,
+            $"{EccChar(qr.ErrorCorrection)}A,{Sanitise(qr.Value)}").Append(Crlf);
+
+        sb.Append("ENDQR").Append(Crlf);
+    }
+
+    private static void EmitImage(StringBuilder sb, PrintBlock.Image image, PositionedBlock p)
+    {
+        var bitmap = image.Bitmap;
+
+        // EG <width-in-bytes> <height-in-dots> <x> <y> <hex>
+        sb.Append(CultureInfo.InvariantCulture,
+            $"EG {bitmap.BytesPerRow} {bitmap.Height} {p.X} {p.Y} ");
+
+        // Hex, uppercase, no separators — CPCL reads it as one run.
+        foreach (var b in bitmap.Data) sb.Append(CultureInfo.InvariantCulture, $"{b:X2}");
+
+        sb.Append(Crlf);
+    }
+
+    private static char EccChar(EccLevel level) => level switch
+    {
+        EccLevel.L => 'L',
+        EccLevel.M => 'M',
+        EccLevel.Q => 'Q',
+        EccLevel.H => 'H',
+        _ => 'Q',
+    };
 
     private static string TypeName(Symbology symbology) => symbology switch
     {

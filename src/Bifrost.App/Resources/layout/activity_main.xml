@@ -77,12 +77,35 @@
         android:layout_width="match_parent"
         android:layout_height="56dp" />
 
+    <!-- Connect also checks the language and fills the list below (FR-607). -->
     <Button
         android:id="@+id/connectButton"
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:layout_marginTop="8dp"
         android:text="Connect" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="PRINTER LANGUAGE"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:paddingTop="12dp"
+        android:paddingBottom="4dp" />
+
+    <!-- Filled after Connect, from what the printer reported. -->
+    <Spinner
+        android:id="@+id/languageSpinner"
+        android:layout_width="match_parent"
+        android:layout_height="56dp" />
+
+    <Button
+        android:id="@+id/switchButton"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginTop="8dp"
+        android:text="Switch language (reconnects)" />
 
     <!--
       FR-402. Proves the whole path without a web page in it, which is what separates
@@ -92,15 +115,8 @@
         android:id="@+id/testPrintButton"
         android:layout_width="match_parent"
         android:layout_height="56dp"
-        android:layout_marginTop="8dp"
-        android:text="Test print" />
-
-    <Button
-        android:id="@+id/probeButton"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:layout_marginTop="8dp"
-        android:text="Identify printer language" />
+        android:layout_marginTop="12dp"
+        android:text="Test print (text, barcode, QR, image)" />
 
     <!--
       The ZQ320 printed every byte it was sent as literal text, which is what a Zebra does when
@@ -111,12 +127,12 @@
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:layout_marginTop="8dp"
-        android:text="Zebra: set language to CPCL" />
+        android:text="Zebra: force device.languages to CPCL" />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Identify sends a visible ESC/POS test line. Watch whether paper moves."
+        android:text="Forcing the language needs a printer power-cycle to take effect."
         android:textSize="12sp"
         android:paddingTop="4dp"
         android:paddingBottom="8dp" />

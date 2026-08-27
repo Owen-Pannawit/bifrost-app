@@ -104,12 +104,39 @@ public sealed class SelfCheckDocumentTests
     }
 
     [Fact]
-    public void It_feeds_enough_to_clear_the_tear_bar()
+    public void It_feeds_enough_to_read_but_not_enough_to_waste()
     {
-        // Content stopping under the head means the operator cannot read or scan it without
-        // pulling media through by hand.
+        // Two constraints pull against each other. Too little and the content stops under the
+        // head, so it cannot be read or torn without pulling media through by hand. Too much and
+        // a button pressed dozens of times while diagnosing empties a roll.
+        var doc = SelfCheckDocument.Create(EscPos, "printer", "14:32:07");
+        var feed = doc.Blocks.OfType<PrintBlock.Feed>().Sum(f => f.Dots);
+
+        Assert.InRange(feed, 24, 64);
+    }
+
+    [Fact]
+    public void It_exercises_the_paths_a_barcode_does_not()
+    {
+        // A 1-D barcode, a 2-D symbol and a raster transfer fail independently of each other. A
+        // test print covering only text and a barcode leaves half the driver unproven — which is
+        // how an ESC/POS driver looked healthy on a printer that speaks CPCL.
         var doc = SelfCheckDocument.Create(EscPos, "printer", "14:32:07");
 
-        Assert.True(doc.Blocks.OfType<PrintBlock.Feed>().Sum(f => f.Dots) >= 72);
+        Assert.Single(doc.Blocks.OfType<PrintBlock.Barcode>());
+        Assert.Single(doc.Blocks.OfType<PrintBlock.QrCode>());
+        Assert.Single(doc.Blocks.OfType<PrintBlock.Image>());
+    }
+
+    [Fact]
+    public void The_QR_carries_a_realistic_payload_not_just_a_part_number()
+    {
+        // A QR holding eight characters proves a symbol printed, not that a real payload fits.
+        var qr = SelfCheckDocument.Create(EscPos, "printer", "14:32:07")
+            .Blocks.OfType<PrintBlock.QrCode>().Single();
+
+        Assert.Contains("PN=", qr.Value, StringComparison.Ordinal);
+        Assert.Contains("LOT=", qr.Value, StringComparison.Ordinal);
+        Assert.True(qr.Value.Length > 20);
     }
 }

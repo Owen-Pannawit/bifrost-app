@@ -142,15 +142,53 @@ public sealed class EscPosDriverTests
     }
 
     [Fact]
-    public void Capabilities_do_not_over_claim()
+    public void Capabilities_match_what_the_driver_actually_emits()
     {
         var caps = new EscPosDriver().Capabilities;
 
         // Over-declaring produces broken output; under-declaring degrades gracefully (ADR-007).
-        Assert.False(caps.SupportsQr);
-        Assert.False(caps.SupportsImages);
+        // QR and raster are now emitted, so claiming them is honest — though GS ( k is
+        // model-dependent on cheap clones, and the first thing to suspect if a symbol never
+        // appears on unfamiliar hardware.
+        Assert.True(caps.SupportsQr);
+        Assert.True(caps.SupportsImages);
         Assert.Equal(PositioningModel.Sequential, caps.PositioningModel);
         Assert.Contains(Symbology.Code128, caps.SupportedSymbologies);
+    }
+
+    [Fact]
+    public void QR_is_stored_then_printed_with_size_and_error_correction_first()
+    {
+        // GS ( k is stateful: module size and ECC configure the symbol, the store carries the
+        // data, and only then does print emit it. Out of order and the printer uses stale
+        // settings or prints nothing at all.
+        var bytes = new EscPosDriver().Serialise(
+            Doc(PrintBlock.QrCode.Of("PN=6205-2RS", scale: 4, errorCorrection: EccLevel.Q)),
+            Profile);
+
+        AssertContainsSequence(bytes, [0x1D, (byte)'(', (byte)'k', 3, 0, 49, 67, 4]);    // size 4
+        AssertContainsSequence(bytes, [0x1D, (byte)'(', (byte)'k', 3, 0, 49, 69, 50]);   // ECC Q
+        AssertContainsSequence(bytes, [0x1D, (byte)'(', (byte)'k']);                     // store
+        AssertContainsSequence(bytes, [0x1D, (byte)'(', (byte)'k', 3, 0, 49, 81, 48]);   // print
+
+        Assert.Contains("PN=6205-2RS", Encoding.ASCII.GetString(bytes), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_image_is_sent_as_raster_with_its_true_dimensions()
+    {
+        var bitmap = new MonochromeBitmap(16, 8);
+        bitmap.Set(0, 0);
+        bitmap.Set(15, 7);
+
+        var bytes = new EscPosDriver().Serialise(
+            Doc(new PrintBlock.Image(bitmap, Alignment.Center)), Profile);
+
+        // GS v 0 m xL xH yL yH — 2 bytes per row, 8 rows.
+        AssertContainsSequence(bytes, [0x1D, (byte)'v', (byte)'0', 0, 2, 0, 8, 0]);
+
+        // And the pixel data itself: first row has bit 7 set, last row bit 0 of the second byte.
+        AssertContainsSequence(bytes, [0x80, 0x00]);
     }
 
     private static void AssertContainsSequence(byte[] haystack, byte[] needle) =>
