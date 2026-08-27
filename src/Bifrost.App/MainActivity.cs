@@ -38,6 +38,7 @@ public class MainActivity : Activity, IServiceConnection
     private Spinner _printerSpinner = null!;
     private Button _connectButton = null!;
     private Button _probeButton = null!;
+    private Button _testPrintButton = null!;
     private View _batteryWarning = null!;
 
     private BridgeService? _bridge;
@@ -58,8 +59,11 @@ public class MainActivity : Activity, IServiceConnection
         _probeButton = FindViewById<Button>(Resource.Id.probeButton)!;
         _batteryWarning = FindViewById<View>(Resource.Id.batteryWarning)!;
 
+        _testPrintButton = FindViewById<Button>(Resource.Id.testPrintButton)!;
+
         _connectButton.Click += async (_, _) => await ConnectSelectedAsync();
         _probeButton.Click += async (_, _) => await ProbeSelectedAsync();
+        _testPrintButton.Click += async (_, _) => await TestPrintAsync();
 
         FindViewById<Button>(Resource.Id.batteryButton)!.Click += (_, _) =>
         {
@@ -266,6 +270,50 @@ public class MainActivity : Activity, IServiceConnection
         finally
         {
             _connectButton.Enabled = true;
+        }
+    }
+
+    // ---------------------------------------------------------------- test print
+
+    /// <summary>
+    /// Print a self-check label. No web page, no HTTP, no CORS — just driver, transport, printer.
+    /// </summary>
+    /// <remarks>
+    /// This is the button that answers the go/no-go question. Everything upstream of the driver
+    /// is already covered by 64 automated tests; what none of them can prove is that bytes reach
+    /// paper on hardware nobody has run this against.
+    /// </remarks>
+    private async Task TestPrintAsync()
+    {
+        if (_bridge is null)
+        {
+            Log("Bridge service not bound yet.");
+            return;
+        }
+
+        _testPrintButton.Enabled = false;
+        try
+        {
+            Log("Test print…");
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(40));
+            var result = await _bridge.TestPrintAsync(cts.Token);
+
+            if (result.IsSuccess)
+            {
+                Log($"Sent {result.Value.ByteCount} bytes. " +
+                    "If a label came out, scan the barcode — that is the gate.");
+            }
+            else
+            {
+                // OperatorMessage is written to be actionable; showing the code as well gives
+                // support something to search for (DES-09 §6).
+                Log($"Test print failed: {result.Error.OperatorMessage} [{result.Error.Code}]");
+            }
+        }
+        finally
+        {
+            _testPrintButton.Enabled = true;
         }
     }
 

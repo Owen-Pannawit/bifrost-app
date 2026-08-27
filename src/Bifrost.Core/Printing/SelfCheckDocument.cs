@@ -1,0 +1,56 @@
+using Bifrost.Core.Model;
+
+namespace Bifrost.Core.Printing;
+
+/// <summary>
+/// Builds the self-check label printed by the Test Print action (FR-402).
+/// </summary>
+/// <remarks>
+/// <para>
+/// Lives in Core, not in the Android service, because composing a <see cref="PrintDocument"/> is
+/// domain logic and must stay testable without a device (NFR-601). The service supplies the
+/// profile and the clock; nothing here touches Android.
+/// </para>
+/// <para>
+/// The label's job is to prove the whole path — driver, transport, Bluetooth, printer — with no
+/// web page involved, and to be photographable for a support ticket (DES-09 §5.3).
+/// </para>
+/// </remarks>
+public static class SelfCheckDocument
+{
+    /// <summary>The value encoded in the test barcode. Fixed, so a scan can be checked against it.</summary>
+    public const string BarcodeValue = "6205-2RS";
+
+    public static PrintDocument Create(PrinterProfile profile, string printerName, string timestamp)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        return new PrintDocument(
+            profile.PrintWidthDots,
+            profile.MediaType,
+            [
+                new PrintBlock.Text("BIFROST TEST", sizeMultiplier: 2, align: Alignment.Center, bold: true),
+                new PrintBlock.Text(printerName, align: Alignment.Center),
+
+                // Identity and capabilities on the paper: a photographed label then answers most
+                // of what support would otherwise have to ask for.
+                new PrintBlock.Text(
+                    $"{profile.Language} · {profile.PrintWidthDots} dots · {profile.Dpi} dpi",
+                    align: Alignment.Center),
+
+                // A timestamp so repeated test prints are distinguishable on the bench. Without it
+                // an old label is easily mistaken for a new one, and a failure looks like a success.
+                new PrintBlock.Text(timestamp, align: Alignment.Center),
+
+                new PrintBlock.Feed(16),
+
+                // The point of the exercise: a barcode a scanner must read first time.
+                // moduleWidth 3 rather than 2 — wider bars survive a dirty printhead and a low
+                // battery, and an unscannable label is the defect this project must not ship.
+                PrintBlock.Barcode.Of(Symbology.Code128, BarcodeValue, heightDots: 90, moduleWidth: 3),
+
+                new PrintBlock.Text("scan the barcode above", align: Alignment.Center),
+                new PrintBlock.Feed(72),
+            ]);
+    }
+}

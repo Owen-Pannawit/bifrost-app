@@ -187,6 +187,33 @@ public sealed class BridgeService : Service
         return Result.Ok();
     }
 
+    /// <summary>
+    /// Print a self-check label: printer identity, capabilities and a scannable barcode.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// FR-402. Its value is that it proves the whole path — driver, transport, Bluetooth link,
+    /// printer — <b>without involving a web page at all</b>. That separates "Bluetooth printing
+    /// does not work" from "the web integration does not work", which are different problems with
+    /// different fixes, and the first must be answered before the second is worth asking.
+    /// </para>
+    /// <para>
+    /// It also gives support something concrete: one sheet that can be photographed and sent in
+    /// (DES-09 §5.3).
+    /// </para>
+    /// </remarks>
+    public async Task<Result<PrintJob>> TestPrintAsync(CancellationToken ct)
+    {
+        if (_printService is null) return new PrinterError.NotConnected();
+
+        var document = SelfCheckDocument.Create(
+            _printService.Profile,
+            ConnectedPrinterName ?? _printService.Profile.DisplayName,
+            DateTime.Now.ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture));
+
+        return await _printService.PrintAsync(document, ct).ConfigureAwait(false);
+    }
+
     private static PrinterProfile DemoProfile(PrinterLanguage language) => new(
         Id: "demo",
         BluetoothAddress: string.Empty,

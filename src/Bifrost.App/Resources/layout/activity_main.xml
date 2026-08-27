@@ -84,6 +84,17 @@
         android:layout_marginTop="8dp"
         android:text="Connect" />
 
+    <!--
+      FR-402. Proves the whole path without a web page in it, which is what separates
+      "Bluetooth does not work" from "the web integration does not work".
+    -->
+    <Button
+        android:id="@+id/testPrintButton"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginTop="8dp"
+        android:text="Test print" />
+
     <Button
         android:id="@+id/probeButton"
         android:layout_width="match_parent"
