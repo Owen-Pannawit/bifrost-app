@@ -181,6 +181,42 @@ public sealed class EndToEndPrintTests
         Assert.Empty(transport.Written);
     }
 
+    [Theory]
+    [InlineData("6205-2RS ตลับลูกปืน")]
+    [InlineData("Café")]
+    [InlineData("naïve")]
+    public async Task Non_ASCII_text_is_rejected_rather_than_printed_as_question_marks(string value)
+    {
+        // Drivers encode with Encoding.ASCII (D-09), so anything else becomes "?" on the paper.
+        // Silently mangling is the worst option: it is discovered on a shelf, not at the keyboard.
+        var (server, transport) = await BuildAsync();
+
+        var encoded = JsonSerializer.Serialize(value);
+        var body = "{\"tier\":\"dsl\",\"document\":{\"elements\":[{\"type\":\"text\",\"value\":"
+                   + encoded + "}]}}";
+
+        var response = await server.SendAsync("POST", "/v1/print", body, FromAllowedOrigin);
+        var error = JsonDocument.Parse(response.Body).RootElement.GetProperty("error");
+
+        Assert.Equal(400, response.StatusCode);
+        Assert.Equal("VALIDATION_ERROR", error.GetProperty("code").GetString());
+        Assert.Contains("ASCII", error.GetProperty("message").GetString()!, StringComparison.Ordinal);
+        Assert.Empty(transport.Written);
+    }
+
+    [Fact]
+    public async Task Plain_ASCII_still_prints()
+    {
+        var (server, transport) = await BuildAsync();
+
+        var response = await server.SendAsync("POST", "/v1/print",
+            """{"tier":"dsl","document":{"elements":[{"type":"text","value":"6205-2RS Lot L2408"}]}}""",
+            FromAllowedOrigin);
+
+        Assert.Equal(202, response.StatusCode);
+        Assert.NotEmpty(transport.Written);
+    }
+
     [Fact]
     public async Task A_validation_error_names_the_offending_field()
     {

@@ -88,6 +88,22 @@ public sealed class SelfCheckDocumentTests
     }
 
     [Fact]
+    public void Every_character_is_ASCII()
+    {
+        // REGRESSION. A middle dot separator survived compilation, then printed as "?" because
+        // drivers encode with Encoding.ASCII (D-09). The self-check is what someone reads when
+        // deciding whether the driver works, so it misreporting itself as broken is the one
+        // failure this label must never have.
+        var doc = SelfCheckDocument.Create(EscPos, "ZQ521-A17", "14:32:07");
+
+        foreach (var text in doc.Blocks.OfType<PrintBlock.Text>())
+        {
+            Assert.All(text.Value, c => Assert.True(c <= 127,
+                $"Non-ASCII '{c}' (U+{(int)c:X4}) in \"{text.Value}\" will print as '?'."));
+        }
+    }
+
+    [Fact]
     public void It_feeds_enough_to_clear_the_tear_bar()
     {
         // Content stopping under the head means the operator cannot read or scan it without

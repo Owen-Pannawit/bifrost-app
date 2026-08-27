@@ -34,8 +34,13 @@ public static class SelfCheckDocument
 
                 // Identity and capabilities on the paper: a photographed label then answers most
                 // of what support would otherwise have to ask for.
+                //
+                // ASCII only, and deliberately so. Drivers encode with Encoding.ASCII (D-09 —
+                // content is English and numeric), so a middle dot separator printed as "?" and
+                // made the diagnostic label look like a fault in the driver. A self-check that
+                // misleads about the thing it is checking is worse than none.
                 new PrintBlock.Text(
-                    $"{profile.Language} · {profile.PrintWidthDots} dots · {profile.Dpi} dpi",
+                    $"{profile.Language} {profile.PrintWidthDots}dots {profile.Dpi}dpi",
                     align: Alignment.Center),
 
                 // A timestamp so repeated test prints are distinguishable on the bench. Without it

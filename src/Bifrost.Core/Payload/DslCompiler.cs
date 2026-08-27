@@ -104,6 +104,19 @@ public sealed class DslCompiler(int defaultWidthDots, MediaType defaultMediaType
             return new PrinterError.ValidationError($"{path}.align", "align must be left, center or right.");
         }
 
+        // Drivers encode with Encoding.ASCII, so anything outside it silently becomes "?" on the
+        // paper. D-09 fixes the content as English and numeric, so rejecting is honest: a caller
+        // sending accented or Thai text has a real problem, and discovering it as a row of question
+        // marks on a label weeks later is the worst possible time.
+        if (e.Value.Any(c => c > 127))
+        {
+            var offending = new string(e.Value.Where(c => c > 127).Distinct().Take(5).ToArray());
+            return new PrinterError.ValidationError(
+                $"{path}.value",
+                $"Text must be ASCII; this printer cannot render '{offending}'. " +
+                "Non-Latin scripts need bitmap rendering, which this build does not support.");
+        }
+
         return Result<PrintBlock>.Ok(new PrintBlock.Text(
             e.Value, size, e.Bold ?? false, e.Underline ?? false,
             Invert: false, FontId: null, align.Value));
