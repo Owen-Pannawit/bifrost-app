@@ -289,6 +289,85 @@ public sealed class EndToEndPrintTests
     }
 
     [Fact]
+    public async Task A_successful_print_carries_the_header_the_browser_needs_to_read_it()
+    {
+        // REGRESSION. Decorate was never wired up, so 202 came back with no
+        // Access-Control-Allow-Origin. The server printed and the browser discarded the reply —
+        // the page reported failure for a label that had already come out. The operator then
+        // prints again and gets a duplicate, which is the outcome NFR-202 exists to prevent,
+        // arriving through a door nobody was watching.
+        var (server, transport) = await BuildAsync();
+
+        var response = await server.SendAsync("POST", "/v1/print", PartLabel, FromAllowedOrigin);
+
+        Assert.Equal(202, response.StatusCode);
+        Assert.NotEmpty(transport.Written);
+        Assert.Equal(AllowedOrigin, response.Headers?["Access-Control-Allow-Origin"]);
+        Assert.Equal("Origin", response.Headers?["Vary"]);
+    }
+
+    [Fact]
+    public async Task Status_responses_are_decorated_too()
+    {
+        var (server, _) = await BuildAsync();
+
+        var response = await server.SendAsync("GET", "/v1/status", headers: FromAllowedOrigin);
+
+        Assert.Equal(AllowedOrigin, response.Headers?["Access-Control-Allow-Origin"]);
+    }
+
+    [Fact]
+    public async Task A_refused_origin_gets_no_headers_even_on_the_error_response()
+    {
+        var (server, _) = await BuildAsync();
+
+        var response = await server.SendAsync("POST", "/v1/print", PartLabel,
+            new Dictionary<string, string> { ["Origin"] = "http://evil.local" });
+
+        Assert.Equal(403, response.StatusCode);
+        Assert.True(response.Headers is null
+            || !response.Headers.ContainsKey("Access-Control-Allow-Origin"));
+    }
+
+    [Theory]
+    [InlineData("http://127.0.0.1:8437")]   // a page served by the bridge itself
+    [InlineData("http://localhost:3000")]   // a dev server reached over adb reverse
+    [InlineData("http://localhost")]
+    [InlineData("http://[::1]:5500")]
+    public async Task Any_loopback_origin_can_print_whatever_its_port(string origin)
+    {
+        // REGRESSION. Origins compare exactly, including the port, and the allowlist held only
+        // bare hosts — so every practical way of serving a test page was refused, including a
+        // page served by the bridge's own port. Web printing could not be tested at all.
+        var (server, transport) = await BuildAsync();
+
+        var response = await server.SendAsync("POST", "/v1/print", PartLabel,
+            new Dictionary<string, string> { ["Origin"] = origin });
+
+        Assert.Equal(202, response.StatusCode);
+        Assert.NotEmpty(transport.Written);
+        Assert.Equal(origin, response.Headers?["Access-Control-Allow-Origin"]);
+    }
+
+    [Theory]
+    [InlineData("http://evil.local")]
+    [InlineData("http://192.168.1.50:3000")]     // LAN is not loopback
+    [InlineData("https://localhost.evil.com")]   // suffix trickery
+    [InlineData("http://notlocalhost")]
+    public async Task Non_loopback_origins_are_still_refused(string origin)
+    {
+        // The loopback exemption must not become a general opening. A remote page is the threat
+        // the allowlist exists for (T-1).
+        var (server, transport) = await BuildAsync();
+
+        var response = await server.SendAsync("POST", "/v1/print", PartLabel,
+            new Dictionary<string, string> { ["Origin"] = origin });
+
+        Assert.Equal(403, response.StatusCode);
+        Assert.Empty(transport.Written);
+    }
+
+    [Fact]
     public async Task The_interceptor_covers_every_registered_route()
     {
         // A new endpoint must not be able to slip past the origin check by existing.

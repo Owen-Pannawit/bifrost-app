@@ -6,17 +6,18 @@ namespace Bifrost.Server;
 /// <remarks>
 /// <para>
 /// Runs before every route through <see cref="IBridgeServer.UseInterceptor"/>, so no endpoint can
-/// accidentally omit it (FR-508).
+/// accidentally omit it (FR-508), and decorates the response afterwards — a browser discards a
+/// reply that carries no <c>Access-Control-Allow-Origin</c>, even one the server was happy to
+/// serve.
 /// </para>
 /// <para>
-/// <b>Demo scope.</b> The bearer-token half of ADR-006 is not implemented — see the plan's "What is
-/// deliberately not built". Origin checking is here because it costs almost nothing and because
-/// leaving <c>Access-Control-Allow-Origin: *</c> in place would let any page on the device drive
-/// the printer. Token authentication is Phase 6.
+/// <b>Demo scope.</b> The bearer-token half of ADR-006 is not implemented. Origin checking is here
+/// because it costs almost nothing and because a permissive default would let any page on the
+/// device drive the printer. Token authentication is Phase 6.
 /// </para>
 /// <para>
-/// <b>No wildcards, ever.</b> <c>*.company.local</c> would authorise any compromised subdomain to
-/// put labels on physical stock (DES-08 §5).
+/// <b>No wildcards for remote origins.</b> <c>*.company.local</c> would authorise any compromised
+/// subdomain to put labels on physical stock (DES-08 §5).
 /// </para>
 /// </remarks>
 public sealed class CorsInterceptor(IReadOnlyCollection<string> allowedOrigins) : IRequestInterceptor
@@ -45,12 +46,44 @@ public sealed class CorsInterceptor(IReadOnlyCollection<string> allowedOrigins) 
         return Task.FromResult<BridgeResponse?>(null);
     }
 
-    /// <summary>Headers to attach to a successful response for an allowlisted origin.</summary>
-    public IReadOnlyDictionary<string, string>? HeadersFor(string? origin) =>
-        !string.IsNullOrEmpty(origin) && IsAllowed(origin) ? Headers(origin) : null;
+    /// <summary>Attach the CORS headers to a response the route produced.</summary>
+    public BridgeResponse Decorate(BridgeRequest request, BridgeResponse response)
+    {
+        var origin = request.Header("Origin");
+        if (string.IsNullOrEmpty(origin) || !IsAllowed(origin)) return response;
+
+        var headers = new Dictionary<string, string>(response.Headers ?? new Dictionary<string, string>());
+        foreach (var (name, value) in Headers(origin)) headers[name] = value;
+
+        return response with { Headers = headers };
+    }
 
     private bool IsAllowed(string origin) =>
-        allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase);
+        allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase) || IsLoopback(origin);
+
+    /// <summary>
+    /// Any loopback origin is allowed, on any port.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Origins compare exactly, including the port — <c>http://localhost:3000</c> is not
+    /// <c>http://localhost</c>. Enumerating ports in the allowlist would be endless, and the
+    /// alternative is worse: every practical way of serving a page on the device (a dev server,
+    /// the bridge's own port) would be rejected, and the operator would learn to paste origins
+    /// into a config to make printing work.
+    /// </para>
+    /// <para>
+    /// <b>What this does and does not permit.</b> A loopback origin means a page served from this
+    /// device. Every <i>remote</i> page is still refused, which is the threat the allowlist exists
+    /// for (T-1). It does admit another local app that serves a page — already an accepted risk
+    /// while token authentication is deferred (DES-08 §3.1), and the reason ADR-006 pairs the
+    /// origin check with a token in the first place.
+    /// </para>
+    /// </remarks>
+    private static bool IsLoopback(string origin) =>
+        Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+        && uri.Scheme is "http" or "https"
+        && (uri.IsLoopback || string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase));
 
     private static Dictionary<string, string> Headers(string origin) => new()
     {

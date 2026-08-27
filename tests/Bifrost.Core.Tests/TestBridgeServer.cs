@@ -69,8 +69,17 @@ public sealed class TestBridgeServer : IBridgeServer
             if (shortCircuit is not null) return shortCircuit;
         }
 
-        return _routes.TryGetValue((request.Method, request.Path), out var handler)
+        var response = _routes.TryGetValue((request.Method, request.Path), out var handler)
             ? await handler(request, CancellationToken.None)
             : BridgeResponse.Error(404, "NOT_FOUND", $"No route for {request.Method} {request.Path}.", false);
+
+        // Must mirror the real adapter, or tests pass against a pipeline that does not exist.
+        // Missing this is exactly how the absent CORS headers on success went unnoticed.
+        for (var i = _interceptors.Count - 1; i >= 0; i--)
+        {
+            response = _interceptors[i].Decorate(request, response);
+        }
+
+        return response;
     }
 }

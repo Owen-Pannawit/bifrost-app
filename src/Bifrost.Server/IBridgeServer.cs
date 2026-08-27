@@ -40,11 +40,23 @@ public interface IBridgeServer : IAsyncDisposable
 public delegate Task<BridgeResponse> RouteHandler(BridgeRequest request, CancellationToken ct);
 
 /// <summary>
-/// Returns null to let the request proceed, or a response to short-circuit it.
+/// Runs before, and optionally after, every route.
 /// </summary>
 public interface IRequestInterceptor
 {
+    /// <summary>Return null to let the request proceed, or a response to short-circuit it.</summary>
     Task<BridgeResponse?> InterceptAsync(BridgeRequest request, CancellationToken ct);
+
+    /// <summary>
+    /// Adjust a response a route produced. Runs for successful responses too.
+    /// </summary>
+    /// <remarks>
+    /// Needed because CORS is not only about rejecting: a browser also discards a response it was
+    /// allowed to make if the reply carries no <c>Access-Control-Allow-Origin</c>. Without this
+    /// hook the label prints and the page reports failure — which is worse than a plain rejection,
+    /// because the operator prints again and gets a duplicate.
+    /// </remarks>
+    BridgeResponse Decorate(BridgeRequest request, BridgeResponse response) => response;
 }
 
 /// <summary>A request, in terms this project owns rather than a server library's.</summary>

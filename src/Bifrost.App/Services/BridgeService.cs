@@ -40,14 +40,16 @@ public sealed class BridgeService : Service
     private const int BridgePort = 8437;
 
     /// <summary>
-    /// Demo allowlist. Loopback covers a page served from the device; the intranet origin is the
-    /// one that will actually be used. No wildcards — a compromised subdomain must not be able to
-    /// put labels on physical stock (DES-08 §5).
+    /// Remote origins permitted to print. Loopback is allowed automatically on any port, so a page
+    /// served from the device itself needs no entry here — see <see cref="CorsInterceptor"/>.
     /// </summary>
+    /// <remarks>
+    /// No wildcards: a compromised subdomain must not be able to put labels on physical stock
+    /// (DES-08 §5). Replace this with the real intranet origin before the demo — including scheme
+    /// and port, because origins compare exactly.
+    /// </remarks>
     private static readonly string[] AllowedOrigins =
     [
-        "http://localhost",
-        "http://127.0.0.1",
         "http://intranet.company.local",
     ];
 

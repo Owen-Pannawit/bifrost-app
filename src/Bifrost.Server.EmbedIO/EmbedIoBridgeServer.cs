@@ -76,6 +76,14 @@ public sealed class EmbedIoBridgeServer : IBridgeServer
         }
 
         var response = await handler(request, context.CancellationToken).ConfigureAwait(false);
+
+        // Decorate in reverse registration order, so the first interceptor registered has the
+        // last word on the response — the mirror of it having the first word on the request.
+        for (var i = _interceptors.Count - 1; i >= 0; i--)
+        {
+            response = _interceptors[i].Decorate(request, response);
+        }
+
         await WriteAsync(context, response).ConfigureAwait(false);
     }
 
