@@ -97,16 +97,45 @@ public sealed class BridgeService : Service
     {
         var notification = BridgeNotification.Build(this, state, title, detail);
 
-        if (OperatingSystem.IsAndroidVersionAtLeast(29))
+        try
         {
-            // From Android 14 the type is mandatory; from 29 the overload exists. Declaring
-            // connectedDevice is what entitles the process to hold a Bluetooth link in the
-            // background (DES-08 §6.1).
-            StartForeground(BridgeNotification.Id, notification, ForegroundService.TypeConnectedDevice);
+            if (OperatingSystem.IsAndroidVersionAtLeast(29))
+            {
+                // From Android 14 the type is mandatory; from 29 the overload exists. Declaring
+                // connectedDevice is what entitles the process to hold a Bluetooth link in the
+                // background (DES-08 §6.1).
+                StartForeground(BridgeNotification.Id, notification, ForegroundService.TypeConnectedDevice);
+            }
+            else
+            {
+                StartForeground(BridgeNotification.Id, notification);
+            }
         }
-        else
+        catch (Java.Lang.Exception ex)
         {
-            StartForeground(BridgeNotification.Id, notification);
+            // Android 14 validates a connectedDevice service against the app's *granted* runtime
+            // permissions, not its manifest. On the very first launch after install,
+            // BLUETOOTH_CONNECT has not been granted yet — the activity is still asking — and
+            // startForeground throws, killing the process before the operator can answer the
+            // prompt.
+            //
+            // Starting without the type keeps the bridge alive so the UI can come up and request
+            // permission; the activity restarts the service once granted, and the second attempt
+            // gets the type it needs. Degrading here is right: a bridge running without background
+            // entitlement is worth far more than a process that dies at the moment of first use.
+            Android.Util.Log.Warn("Bifrost",
+                $"connectedDevice foreground service refused ({ex.Message}). " +
+                "Falling back until Bluetooth permission is granted.");
+
+            try
+            {
+                StartForeground(BridgeNotification.Id, notification);
+            }
+            catch (Java.Lang.Exception fallback)
+            {
+                Android.Util.Log.Error("Bifrost",
+                    $"Foreground service could not start at all: {fallback.Message}");
+            }
         }
     }
 

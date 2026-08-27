@@ -354,6 +354,17 @@ public class MainActivity : Activity, IServiceConnection
         // Bonded devices are unreadable without BLUETOOTH_CONNECT, so the list must be rebuilt
         // once permission arrives or the spinner stays empty for no visible reason.
         LoadPairedDevices();
+
+        // Android 14 validates a connectedDevice foreground service against granted permissions,
+        // so on first run the service started without that type. Restart it now that the grant
+        // exists, or it would run for the whole session without background entitlement and the
+        // connection would drop the first time the operator switches to Chrome.
+        if (grantResults.Any(g => g == Permission.Granted))
+        {
+            var intent = new Intent(this, typeof(BridgeService));
+            if (OperatingSystem.IsAndroidVersionAtLeast(26)) StartForegroundService(intent);
+            else StartService(intent);
+        }
     }
 
     // ---------------------------------------------------------------- plumbing

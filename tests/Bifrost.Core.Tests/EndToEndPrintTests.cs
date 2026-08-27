@@ -368,6 +368,82 @@ public sealed class EndToEndPrintTests
     }
 
     [Fact]
+    public async Task A_preflight_is_answered_even_though_OPTIONS_matches_no_route()
+    {
+        // REGRESSION, and the one that actually broke printing from a browser.
+        //
+        // The EmbedIO adapter registered a module per route, so OPTIONS — a verb no route
+        // declares — was 404'd by the framework before any interceptor ran. Chrome read the
+        // failed preflight and never sent the real request.
+        //
+        // Private Network Access makes that fatal rather than cosmetic: Chrome preflights even a
+        // simple GET when the target is loopback, so every endpoint was unreachable from a page,
+        // not just the ones taking a body.
+        //
+        // TestBridgeServer always routed after intercepting, which is precisely why it passed
+        // while the real server failed. Both must intercept first; this asserts the contract.
+        var (server, _) = await BuildAsync();
+
+        var response = await server.SendAsync("OPTIONS", "/v1/print", headers: FromAllowedOrigin);
+
+        Assert.Equal(204, response.StatusCode);
+        Assert.Equal(AllowedOrigin, response.Headers?["Access-Control-Allow-Origin"]);
+    }
+
+    [Fact]
+    public async Task A_preflight_for_an_unknown_path_is_still_intercepted_not_routed()
+    {
+        // Interception happens before routing, so an unknown path must not shortcut the CORS
+        // decision. Anything else and the framework's 404 wins the race again.
+        var (server, _) = await BuildAsync();
+
+        var response = await server.SendAsync("OPTIONS", "/v1/anything", headers: FromAllowedOrigin);
+
+        Assert.Equal(204, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_private_network_preflight_gets_explicit_consent()
+    {
+        // Chrome asks before reaching a loopback address from a page and discards the response
+        // unless the server consents by name.
+        var (server, _) = await BuildAsync();
+
+        var response = await server.SendAsync("OPTIONS", "/v1/print", headers: new Dictionary<string, string>
+        {
+            ["Origin"] = AllowedOrigin,
+            ["Access-Control-Request-Private-Network"] = "true",
+        });
+
+        Assert.Equal(204, response.StatusCode);
+        Assert.Equal("true", response.Headers?["Access-Control-Allow-Private-Network"]);
+    }
+
+    [Fact]
+    public async Task Consent_to_private_network_access_is_given_only_when_asked_for()
+    {
+        // It is consent to a specific request, not a standing advertisement.
+        var (server, _) = await BuildAsync();
+
+        var response = await server.SendAsync("OPTIONS", "/v1/print", headers: FromAllowedOrigin);
+
+        Assert.True(response.Headers is null
+            || !response.Headers.ContainsKey("Access-Control-Allow-Private-Network"));
+    }
+
+    [Fact]
+    public async Task An_unknown_path_still_returns_a_structured_error()
+    {
+        var (server, _) = await BuildAsync();
+
+        var response = await server.SendAsync("GET", "/v1/nope", headers: FromAllowedOrigin);
+
+        Assert.Equal(404, response.StatusCode);
+        Assert.Equal("NOT_FOUND",
+            JsonDocument.Parse(response.Body).RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
     public async Task The_interceptor_covers_every_registered_route()
     {
         // A new endpoint must not be able to slip past the origin check by existing.

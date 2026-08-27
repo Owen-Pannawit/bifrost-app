@@ -40,7 +40,20 @@ public sealed class CorsInterceptor(IReadOnlyCollection<string> allowedOrigins) 
         // Preflight: answer here rather than letting it reach a route that does not expect it.
         if (string.Equals(request.Method, "OPTIONS", StringComparison.OrdinalIgnoreCase))
         {
-            return Task.FromResult<BridgeResponse?>(new BridgeResponse(204, [], "text/plain", Headers(origin)));
+            var headers = new Dictionary<string, string>(Headers(origin));
+
+            // Private Network Access. A page in a more public address space reaching a more
+            // private one gets a preflight carrying Access-Control-Request-Private-Network, and
+            // the browser discards the response unless the server explicitly consents.
+            //
+            // Answering only when asked, rather than always: it is a consent to a specific
+            // request, and volunteering it on every preflight advertises more than was asked for.
+            if (request.Header("Access-Control-Request-Private-Network") is not null)
+            {
+                headers["Access-Control-Allow-Private-Network"] = "true";
+            }
+
+            return Task.FromResult<BridgeResponse?>(new BridgeResponse(204, [], "text/plain", headers));
         }
 
         return Task.FromResult<BridgeResponse?>(null);

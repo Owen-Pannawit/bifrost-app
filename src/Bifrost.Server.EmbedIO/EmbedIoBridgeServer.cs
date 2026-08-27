@@ -18,15 +18,15 @@ namespace Bifrost.Server.EmbedIO;
 /// </remarks>
 public sealed class EmbedIoBridgeServer : IBridgeServer
 {
-    private readonly List<(string Method, string Route, RouteHandler Handler)> _routes = [];
+    private readonly Dictionary<(string Method, string Route), RouteHandler> _routes = [];
     private readonly List<IRequestInterceptor> _interceptors = [];
 
     private WebServer? _server;
     private CancellationTokenSource? _cts;
 
-    public void MapGet(string route, RouteHandler handler) => _routes.Add(("GET", route, handler));
+    public void MapGet(string route, RouteHandler handler) => _routes[("GET", route)] = handler;
 
-    public void MapPost(string route, RouteHandler handler) => _routes.Add(("POST", route, handler));
+    public void MapPost(string route, RouteHandler handler) => _routes[("POST", route)] = handler;
 
     public void UseInterceptor(IRequestInterceptor interceptor) => _interceptors.Add(interceptor);
 
@@ -40,14 +40,20 @@ public sealed class EmbedIoBridgeServer : IBridgeServer
             .WithUrlPrefix(url)
             .WithMode(HttpListenerMode.EmbedIO));
 
-        foreach (var (method, route, handler) in _routes)
-        {
-            var verb = method == "GET" ? HttpVerbs.Get : HttpVerbs.Post;
-            server = server.WithModule(new ActionModule(
-                route,
-                verb,
-                context => HandleAsync(context, handler)));
-        }
+        // One module for everything, and routing done here rather than by EmbedIO.
+        //
+        // Registering a module per route looks tidier and is wrong: a request that matches no
+        // route — every CORS preflight, since OPTIONS is not a registered verb — is answered 404
+        // by EmbedIO before any module runs, so the interceptors never see it. Chrome then treats
+        // the preflight as failed and the real request never leaves the browser.
+        //
+        // Private Network Access makes this fatal rather than cosmetic: Chrome preflights even a
+        // simple GET when the target is a loopback address, so 404-ing preflights breaks every
+        // endpoint, not just the ones taking a JSON body.
+        //
+        // Routing here also makes this adapter behave like TestBridgeServer, which already did its
+        // own routing. That divergence is what hid the bug.
+        server = server.WithModule(new ActionModule("/", HttpVerbs.Any, HandleAsync));
 
         _server = server;
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -57,11 +63,12 @@ public sealed class EmbedIoBridgeServer : IBridgeServer
         return Task.CompletedTask;
     }
 
-    private async Task HandleAsync(IHttpContext context, RouteHandler handler)
+    private async Task HandleAsync(IHttpContext context)
     {
         var request = await ToBridgeRequestAsync(context).ConfigureAwait(false);
 
-        // Interceptors run before the route, always, in registration order.
+        // Interceptors run before routing, always, in registration order — so a preflight is
+        // answered even though OPTIONS matches no route.
         foreach (var interceptor in _interceptors)
         {
             var shortCircuit = await interceptor
@@ -75,7 +82,10 @@ public sealed class EmbedIoBridgeServer : IBridgeServer
             }
         }
 
-        var response = await handler(request, context.CancellationToken).ConfigureAwait(false);
+        var response = _routes.TryGetValue((request.Method, request.Path), out var handler)
+            ? await handler(request, context.CancellationToken).ConfigureAwait(false)
+            : BridgeResponse.Error(404, "NOT_FOUND",
+                $"No route for {request.Method} {request.Path}.", transient: false);
 
         // Decorate in reverse registration order, so the first interceptor registered has the
         // last word on the response — the mirror of it having the first word on the request.
