@@ -90,9 +90,17 @@ apk=$(find "src/Bifrost.App/bin/$config" -name '*-Signed.apk' 2>/dev/null | head
 if [ -n "$apk" ]; then
   bytes=$(stat -c%s "$apk" 2>/dev/null || stat -f%z "$apk")
   mb=$((bytes / 1048576))
-  [ "$mb" -le 30 ] \
-    && pass "TC-814: APK ${mb} MB, within the 30 MB budget" \
-    || bad "TC-814: APK ${mb} MB exceeds the 30 MB budget (IMP-01 §6)"
+
+  if [ "$config" = "Debug" ]; then
+    # The 30 MB budget in IMP-01 §6 is for the shipped artefact. A debug APK is neither trimmed
+    # nor AOT-compiled, and may embed assemblies for testing, so measuring it against a release
+    # budget reports a failure that means nothing.
+    note "APK ${mb} MB (Debug — not measured; TC-814 applies to Release)"
+  elif [ "$mb" -le 30 ]; then
+    pass "TC-814: APK ${mb} MB, within the 30 MB budget"
+  else
+    bad "TC-814: APK ${mb} MB exceeds the 30 MB budget (IMP-01 §6)"
+  fi
 fi
 
 echo
