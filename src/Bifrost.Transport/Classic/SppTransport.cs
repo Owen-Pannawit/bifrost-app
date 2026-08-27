@@ -134,30 +134,64 @@ public sealed class SppTransport : IPrinterTransport
         }
     }
 
+    /// <summary>Read whatever the printer has to say, or give up after <paramref name="timeout"/>.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Cancellation does not work on this stream.</b> <c>BluetoothSocket.InputStream</c> is a
+    /// Java stream, and <see cref="Stream.ReadAsync(Memory{byte}, CancellationToken)"/> on it runs
+    /// the blocking Java read on a pool thread and ignores the token entirely. A
+    /// <c>CancelAfter</c> therefore fires while the read stays blocked forever, and the caller
+    /// hangs — which is what "Probing…" did with nothing coming back, even though the write had
+    /// plainly arrived and the printer had responded.
+    /// </para>
+    /// <para>
+    /// So the read is raced against a real timer instead. If the timer wins, the read task is
+    /// abandoned: it ends by itself when data eventually arrives or when the socket is closed on
+    /// disconnect. Leaving a pool thread parked is not free, but it is bounded, and it is
+    /// enormously better than a UI that never comes back.
+    /// </para>
+    /// </remarks>
     public async Task<Result<byte[]>> ReadAsync(TimeSpan timeout, CancellationToken ct)
     {
         var input = _input;
         if (input is null) return Result<byte[]>.Fail(new PrinterError.Disconnected());
 
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(timeout);
+        var buffer = new byte[512];
 
-        try
+        var read = Task.Run(() =>
         {
-            var buffer = new byte[256];
-            var read = await input.ReadAsync(buffer, cts.Token).ConfigureAwait(false);
-            return Result<byte[]>.Ok(buffer[..read]);
-        }
-        catch (OperationCanceledException)
+            try
+            {
+                return input.Read(buffer, 0, buffer.Length);
+            }
+            catch (Java.IO.IOException)
+            {
+                // The socket was closed under us — the normal way an abandoned read ends.
+                return -1;
+            }
+            catch (ObjectDisposedException)
+            {
+                return -1;
+            }
+        }, CancellationToken.None);
+
+        var finished = await Task.WhenAny(read, Task.Delay(timeout, ct)).ConfigureAwait(false);
+
+        if (finished != read)
         {
             // Silence is the normal answer from a write-only printer. An empty response is a fact,
             // not a failure — the driver decides what it means (FR-608).
             return Result<byte[]>.Ok([]);
         }
-        catch (Java.IO.IOException ex)
+
+        var count = await read.ConfigureAwait(false);
+
+        return count switch
         {
-            return Result<byte[]>.Fail(new PrinterError.ConnectionFailed(ex.Message ?? "Read failed."));
-        }
+            < 0 => Result<byte[]>.Fail(new PrinterError.Disconnected()),
+            0 => Result<byte[]>.Ok([]),
+            _ => Result<byte[]>.Ok(buffer[..count]),
+        };
     }
 
     public Task DisconnectAsync()
