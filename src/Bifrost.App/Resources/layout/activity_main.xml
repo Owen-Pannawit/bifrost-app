@@ -102,6 +102,17 @@
         android:layout_marginTop="8dp"
         android:text="Identify printer language" />
 
+    <!--
+      The ZQ320 printed every byte it was sent as literal text, which is what a Zebra does when
+      device.languages is line_print. No driver can work until that is changed.
+    -->
+    <Button
+        android:id="@+id/sgdButton"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginTop="8dp"
+        android:text="Zebra: set language to CPCL" />
+
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

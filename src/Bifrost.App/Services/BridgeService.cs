@@ -11,6 +11,7 @@ using Bifrost.Drivers.EscPos;
 using Bifrost.Server;
 using Bifrost.Server.EmbedIO;
 using Bifrost.Transport.Classic;
+using Bifrost.Transport.Probe;
 
 namespace Bifrost.App.Services;
 
@@ -181,6 +182,34 @@ public sealed class BridgeService : Service
         _server = server;
     }
 
+    /// <summary>
+    /// Ask the printer what it speaks, over the link the bridge already holds.
+    /// </summary>
+    /// <remarks>
+    /// Owned by the service rather than the activity because a mobile printer accepts <b>one</b>
+    /// connection at a time. Probing from a second transport fails to connect at all and reports
+    /// "unreachable", which reads as a mute printer when the truth is a busy one — the bug that
+    /// made a Zebra ZQ320 look like it answered nothing.
+    /// </remarks>
+    public async Task<ProbeReport> ProbeLanguageAsync(string address, string displayName, CancellationToken ct)
+    {
+        var connected = _transport is SppTransport
+            && _transport.ConnectionState.Current is Bifrost.Core.Model.ConnectionState.Connected;
+
+        if (connected)
+        {
+            return await new PrinterLanguageProbe(_transport!)
+                .ProbeConnectedAsync(address, displayName, ct)
+                .ConfigureAwait(false);
+        }
+
+        // Not connected yet: a throwaway transport is fine, since nothing else holds the printer.
+        await using var probeTransport = new SppTransport();
+        return await new PrinterLanguageProbe(probeTransport)
+            .ProbeAsync(address, displayName, ct)
+            .ConfigureAwait(false);
+    }
+
     /// <summary>Connect a printer and rebuild the API against it.</summary>
     public async Task<Result> ConnectPrinterAsync(
         string address, string displayName, PrinterLanguage language, CancellationToken ct)
@@ -245,19 +274,79 @@ public sealed class BridgeService : Service
         return await _printService.PrintAsync(document, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// The profile the demo runs against.
+    /// </summary>
+    /// <remarks>
+    /// Hardcoded to the Zebra ZQ320 on the bench: 3-inch, 72 mm printable, 203 dpi, continuous
+    /// receipt media, no cutter. Phase 2 reads this from the printer via
+    /// <c>GET /v1/capabilities</c> (FR-201) rather than assuming — assuming a width is the most
+    /// common cause of clipped labels (DES-06 §8.1).
+    /// </remarks>
     private static PrinterProfile DemoProfile(PrinterLanguage language) => new(
         Id: "demo",
         BluetoothAddress: string.Empty,
         DisplayName: "Printer",
         TransportType: TransportType.BtClassic,
         Language: language,
-        PrintWidthDots: language == PrinterLanguage.Cpcl
-            ? PrinterProfile.Widths.Label4InchAt203Dpi
-            : PrinterProfile.Widths.Receipt80mmAt203Dpi,
+        PrintWidthDots: PrinterProfile.Widths.Millimetres72At203Dpi,
         Dpi: 203,
-        MediaType: language == PrinterLanguage.Cpcl ? MediaType.LabelGap : MediaType.Continuous,
-        HasCutter: language != PrinterLanguage.Cpcl,
+        MediaType: MediaType.Continuous,
+        HasCutter: false,
         SupportsStatusQuery: true);
+
+    /// <summary>
+    /// Ask the printer what command languages it accepts, and switch it if it is not listening in
+    /// one we speak.
+    /// </summary>
+    /// <remarks>
+    /// The ZQ320 printed every byte we sent as literal text — ESC/POS commands and a ZPL query
+    /// alike — which is the signature of a printer whose language is set to <c>line_print</c>.
+    /// In that mode nothing is interpreted, so no driver can work until it is changed.
+    ///
+    /// These are Set-Get-Do commands, understood by Link-OS firmware regardless of the current
+    /// language setting, which is what makes them usable as the way out.
+    /// </remarks>
+    public async Task<Result<string>> SetCpclModeAsync(CancellationToken ct)
+    {
+        if (_transport is null
+            || _transport.ConnectionState.Current is not Bifrost.Core.Model.ConnectionState.Connected)
+        {
+            return new PrinterError.NotConnected();
+        }
+
+        var before = await QuerySgdAsync("device.languages", ct).ConfigureAwait(false);
+
+        var set = await _transport.WriteAsync(
+            System.Text.Encoding.ASCII.GetBytes("! U1 setvar \"device.languages\" \"cpcl\"\r\n"),
+            ct).ConfigureAwait(false);
+
+        if (set.IsFailure) return set.Error;
+
+        // The setting is applied asynchronously; reading straight back returns the old value.
+        await Task.Delay(TimeSpan.FromMilliseconds(600), ct).ConfigureAwait(false);
+        var after = await QuerySgdAsync("device.languages", ct).ConfigureAwait(false);
+
+        return Result<string>.Ok($"device.languages before='{before}' after='{after}'");
+    }
+
+    private async Task<string> QuerySgdAsync(string setting, CancellationToken ct)
+    {
+        if (_transport is null) return "(no transport)";
+
+        var write = await _transport.WriteAsync(
+            System.Text.Encoding.ASCII.GetBytes($"! U1 getvar \"{setting}\"\r\n"), ct)
+            .ConfigureAwait(false);
+
+        if (write.IsFailure) return $"(write failed: {write.Error.Code})";
+
+        var read = await _transport.ReadAsync(TimeSpan.FromSeconds(3), ct).ConfigureAwait(false);
+        if (read.IsFailure) return $"(read failed: {read.Error.Code})";
+
+        return read.Value.Length == 0
+            ? "(no reply)"
+            : System.Text.Encoding.ASCII.GetString(read.Value).Trim();
+    }
 
     private void Publish(BridgeUiState state, string title, string detail)
     {

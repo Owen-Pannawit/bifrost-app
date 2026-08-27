@@ -25,7 +25,12 @@ public sealed record PrinterProfile(
     public static class Widths
     {
         public const int Receipt58mmAt203Dpi = 384;
+
+        /// <summary>80 mm receipt, and also the 3-inch Zebra ZQ320's printable width.</summary>
+        public const int Millimetres72At203Dpi = 576;
+
         public const int Receipt80mmAt203Dpi = 576;
+
         public const int Label4InchAt203Dpi = 832;
     }
 }

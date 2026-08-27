@@ -9,7 +9,6 @@ using Android.Widget;
 using Bifrost.App.Services;
 using Bifrost.Core.Model;
 using Bifrost.Transport;
-using Bifrost.Transport.Classic;
 using Bifrost.Transport.Probe;
 
 namespace Bifrost.App;
@@ -64,6 +63,19 @@ public class MainActivity : Activity, IServiceConnection
         _connectButton.Click += async (_, _) => await ConnectSelectedAsync();
         _probeButton.Click += async (_, _) => await ProbeSelectedAsync();
         _testPrintButton.Click += async (_, _) => await TestPrintAsync();
+
+        FindViewById<Button>(Resource.Id.sgdButton)!.Click += async (_, _) =>
+        {
+            if (_bridge is null) { Log("Bridge service not bound yet."); return; }
+
+            Log("Asking the printer to switch to CPCL…");
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            var result = await _bridge.SetCpclModeAsync(cts.Token);
+
+            Log(result.IsSuccess
+                ? $"{result.Value}\nPower-cycle the printer, reconnect, then Test print."
+                : $"Failed: {result.Error.OperatorMessage} [{result.Error.Code}]");
+        };
 
         FindViewById<Button>(Resource.Id.batteryButton)!.Click += (_, _) =>
         {
@@ -199,16 +211,22 @@ public class MainActivity : Activity, IServiceConnection
             return;
         }
 
+        if (_bridge is null)
+        {
+            Log("Bridge service not bound yet.");
+            return;
+        }
+
         _probeButton.Enabled = false;
         try
         {
             Log($"Probing {device.Name}…");
 
-            await using var transport = new SppTransport();
+            // Through the service, so the probe reuses the link the bridge already holds. A mobile
+            // printer accepts one connection at a time; opening a second one fails before reaching
+            // the printer and looks exactly like a printer that answered nothing.
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-
-            var report = await new PrinterLanguageProbe(transport)
-                .ProbeAsync(address, device.Name ?? "(unnamed)", cts.Token);
+            var report = await _bridge.ProbeLanguageAsync(address, device.Name ?? "(unnamed)", cts.Token);
 
             Log(report.ToReportText());
 

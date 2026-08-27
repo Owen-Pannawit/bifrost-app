@@ -23,7 +23,13 @@ public sealed class PrinterLanguageProbe(IPrinterTransport transport)
 {
     private static readonly TimeSpan ResponseWindow = TimeSpan.FromSeconds(2);
 
-    /// <summary>Probe a printer already connected on <paramref name="address"/>.</summary>
+    /// <summary>Connect to <paramref name="address"/>, then probe.</summary>
+    /// <remarks>
+    /// Only for a transport that is not already connected. A mobile printer accepts one connection
+    /// at a time, so calling this while the bridge holds the link fails before reaching the
+    /// printer — and reports "unreachable", which reads as a mute printer rather than a busy one.
+    /// Use <see cref="ProbeConnectedAsync"/> when the bridge is already connected.
+    /// </remarks>
     public async Task<ProbeReport> ProbeAsync(string address, string displayName, CancellationToken ct)
     {
         var connect = await transport.ConnectAsync(address, ct).ConfigureAwait(false);
@@ -32,6 +38,12 @@ public sealed class PrinterLanguageProbe(IPrinterTransport transport)
             return ProbeReport.Unreachable(address, displayName, connect.Error);
         }
 
+        return await ProbeConnectedAsync(address, displayName, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Probe over a link the caller has already established.</summary>
+    public async Task<ProbeReport> ProbeConnectedAsync(string address, string displayName, CancellationToken ct)
+    {
         var attempts = new List<ProbeAttempt>
         {
             await TryAsync("CPCL", "! U1 getvar \"device.languages\"\r\n", ct).ConfigureAwait(false),
@@ -79,9 +91,27 @@ public sealed class PrinterLanguageProbe(IPrinterTransport transport)
 
     private static PrinterLanguage? Infer(IReadOnlyList<ProbeAttempt> attempts)
     {
-        // Only the Zebra queries can be inferred automatically. ESC/POS is confirmed by the
-        // operator seeing paper move, which is why the result is nullable rather than guessed.
-        if (attempts.Any(a => a is { Label: "CPCL", Responded: true })) return PrinterLanguage.Cpcl;
+        // A Zebra answers the SGD query with the languages it accepts. Read the reply rather than
+        // treating "it replied at all" as the answer: a printer set to line_print still responds,
+        // and assuming CPCL from a reply that says otherwise would send commands it will print as
+        // text — which is exactly the failure that made a ZQ320 look like an ESC/POS printer.
+        var sgd = attempts.FirstOrDefault(a => a is { Label: "CPCL", Responded: true });
+        if (sgd is not null)
+        {
+            var reply = sgd.Response.ToLowerInvariant();
+            if (reply.Contains("cpcl", StringComparison.Ordinal)
+                || reply.Contains("line_print", StringComparison.Ordinal))
+            {
+                return PrinterLanguage.Cpcl;
+            }
+
+            if (reply.Contains("zpl", StringComparison.Ordinal)) return PrinterLanguage.Zpl;
+
+            // It answered an SGD query, so it is Link-OS whatever it said. CPCL is the ZQ family's
+            // native language and the safer default.
+            return PrinterLanguage.Cpcl;
+        }
+
         if (attempts.Any(a => a is { Label: "ZPL", Responded: true })) return PrinterLanguage.Zpl;
         return null;
     }
