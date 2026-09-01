@@ -52,6 +52,17 @@ public sealed class BridgeService : Service
     private static readonly string[] AllowedOrigins =
     [
         "http://intranet.company.local",
+
+        // The React demo hosted on Vercel — github.com/Owen-Pannawit/Demo-web-forRawBT.
+        //
+        // Origins compare as exact strings, so this covers the production domain and nothing else.
+        // Vercel gives every preview deployment its own hostname
+        // (demo-web-forrawbt-<hash>-<scope>.vercel.app), and each one is a different origin that
+        // this list does not admit. That is the allowlist working as designed rather than a defect:
+        // a wildcard here would let any Vercel deployment on the internet drive a printer on the
+        // warehouse floor (DES-08 §5). Test previews over `adb reverse` on a loopback origin, or
+        // add the specific hostname while it is needed.
+        "https://demo-web-forrawbt.vercel.app",
     ];
 
     private readonly BridgeBinder _binder;
