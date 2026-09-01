@@ -1,196 +1,218 @@
-# BifrǫstApp — Documentation
+# BifrǫstApp — ภาพรวมระบบ
 
-**A local print bridge that lets any web application print to a Bluetooth mobile printer with one
-JavaScript call — no cloud, no vendor lock-in, no duplicate labels.**
+> **ให้เว็บแอปสั่งพิมพ์เครื่องพิมพ์ Bluetooth ได้ด้วยคำสั่งเดียว** — ไม่ใช้คลาวด์ ไม่ผูกกับผู้ขายรายใด และไม่มีฉลากซ้ำ
 
 | | |
 | --- | --- |
-| Version | 2.0 |
-| Date | 2026-08-22 |
-| Status | Design complete — ready for implementation |
-| Platform | .NET for Android (C#) + TypeScript SDK |
-| Owner | Bearing Team |
-
-> **Version 2.0** — the platform moved from Kotlin to **.NET for Android**
-> ([ADR-008](03-design/02-adr/ADR-008-dotnet-for-android.md)), because the organisation's development
-> competence is .NET and, under a single-developer constraint, a codebase the organisation can read
-> outweighs the cleanest platform bindings.
->
-> **No architecture changed.** Same topology, containers, components, contracts, and guarantees —
-> only the libraries filling them. ADR-002 and ADR-004 are retained as superseded, so the reasoning
-> trail stays intact.
+| เวอร์ชันเอกสาร | 3.0 (รวบเอกสาร 40 ฉบับเหลือ 5) |
+| วันที่ | 28 สิงหาคม 2026 |
+| สถานะ | ต้นแบบใช้งานได้จริง — 190 เทสต์ผ่าน, ฉลากจริงออกจาก Zebra ZQ320 |
+| แพลตฟอร์ม | .NET for Android (C#) + TypeScript SDK |
+| เจ้าของ | Bearing Team |
 
 ---
 
-## The problem in one paragraph
+## สารบัญ
 
-Warehouse staff work in a web application on rugged Android handhelds and need to print part labels
-on a Bluetooth printer worn on the belt. **The browser cannot reach that printer.** Web Bluetooth
-speaks only BLE/GATT, while most mobile printers expose Bluetooth Classic SPP; `window.print()`
-targets the A4-oriented Android Print Framework, not a 104 mm label. Today an operator walks to a
-fixed print station, re-enters the part number, prints, and walks back.
-
-**Bifrǫst** — named for the rainbow bridge of Norse mythology — is an Android app that runs a local
-server on `127.0.0.1`, receives print jobs from the browser on the same device, and drives the
-printer over Bluetooth. It ships with a JavaScript SDK the web app imports.
+| # | เอกสาร | อ่านเมื่อ |
+| :-: | --- | --- |
+| — | **ภาพรวม** (ไฟล์นี้) | อยากรู้ว่าระบบคืออะไร ตัดสินใจอะไรไว้บ้าง |
+| 01 | [ระบบทำงานอย่างไร](01-how-it-works.md) | ต้องรู้ API, รูปแบบข้อมูล, วงจรงานพิมพ์, ความปลอดภัย |
+| 02 | [คู่มือนักพัฒนา](02-developer-guide.md) | จะเพิ่มปุ่มพิมพ์ในเว็บ หรือจะแก้ตัวแอป |
+| 03 | [คู่มือใช้งานและดูแลระบบ](03-operations.md) | ติดตั้ง ใช้งาน หรือแก้ปัญหาหน้างาน |
+| 04 | [สถานะและแผนงาน](04-status-and-plan.md) | รายงานหัวหน้า / อยากรู้ว่าเหลืออะไร |
 
 ---
 
-## Start here
+## 1. ปัญหา
 
-| If you are… | Read |
+พนักงานคลังทำงานบนเว็บแอปผ่านเครื่องมือถือ และต้องพิมพ์ฉลากลงเครื่องพิมพ์ที่คาดเอว
+**แต่เบราว์เซอร์เข้าถึงเครื่องพิมพ์นั้นไม่ได้**
+
+```mermaid
+flowchart LR
+    A["Web Bluetooth API"] -->|"พูดได้แค่ BLE/GATT"| X1["❌ เครื่องพิมพ์มือถือ<br/>ส่วนใหญ่ใช้ Bluetooth Classic SPP"]
+    B["window.print()"] -->|"ส่งเข้า Android Print Framework"| X2["❌ เล็งกระดาษ A4<br/>ไม่ใช่ฉลาก 72 มม."]
+    C["ปลั๊กอิน print service"] --> X3["❌ มีแพลตฟอร์ม<br/>แต่ไม่มี API ให้เว็บเรียก"]
+```
+
+**ผลที่เกิดขึ้นทุกวัน** — สแกนพาร์ทที่ชั้นวาง → **เดินไปสถานีพิมพ์** → **พิมพ์เลขพาร์ทซ้ำด้วยมือ** →
+สั่งพิมพ์ → **เดินกลับ** (3 ใน 5 ขั้นคือความสูญเปล่า)
+
+### ทำไมไม่ซื้อของสำเร็จรูป
+
+| ทางเลือก | ทำไมใช้ไม่ได้ |
 | --- | --- |
-| **New to the project** | [Problem Statement](01-discovery/01-problem-statement.md) → [PRD](02-requirements/01-prd.md) → [Architecture](03-design/01-architecture.md) |
-| **Implementing the Android app** | [Architecture](03-design/01-architecture.md) → [Tech Stack](04-implementation/01-tech-stack.md) → [Project Structure](04-implementation/02-project-structure.md) → the 7 [ADRs](03-design/02-adr/) |
-| **Integrating a web app** | [SDK Specification](03-design/04-js-sdk-spec.md) → [Payload Schema](03-design/05-print-payload-schema.md) → [Deployment §7](06-operations/01-deployment-guide.md) |
-| **Writing a printer driver** | [Printer Abstraction](03-design/06-printer-abstraction.md) → [ADR-007](03-design/02-adr/ADR-007-printer-language-abstraction.md) |
-| **Deploying to the fleet** | [Deployment Guide](06-operations/01-deployment-guide.md) → [Runbook](06-operations/02-runbook.md) |
-| **Supporting operators** | [Runbook](06-operations/02-runbook.md) |
-| **Buying the printer** | [Hardware Recommendation](06-operations/03-hardware-recommendation.md) |
-| **Lost in an acronym** | [Glossary](07-project/03-glossary.md) |
+| QZ Tray | สถาปัตยกรรมถูกต้องที่สุด แต่**ไม่มีรุ่นสำหรับ Android** |
+| PrintNode / CloudPRNT | ต้องต่ออินเทอร์เน็ต + คิดเงินรายเครื่อง ขัดกับนโยบายเครือข่ายภายใน |
+| SDK ของผู้ผลิตเครื่องพิมพ์ | ผูกสถาปัตยกรรมกับยี่ห้อเดียว ทั้งที่ยังไม่ได้ตัดสินใจซื้อรุ่นไหน |
 
 ---
 
-## Full index
+## 2. ทางออก
 
-### 01 · Discovery
+แอป Android ที่รันเซิร์ฟเวอร์เล็ก ๆ อยู่ในเครื่องเอง รับ HTTP จากเบราว์เซอร์บนเครื่องเดียวกัน
+แล้วขับเครื่องพิมพ์ผ่าน Bluetooth
 
-| Doc | Title | Contents |
-| --- | --- | --- |
-| DISC-01 | [Problem Statement](01-discovery/01-problem-statement.md) | Why the browser cannot reach the printer; why the obvious workarounds fail |
-| DISC-02 | [Stakeholder Interview](01-discovery/02-stakeholder-interview.md) | 17 frozen decisions (`D-01` … `D-17`), deferred items, open questions |
-| DISC-03 | [Competitive Research](01-discovery/03-competitive-research.md) | QZ Tray, PrintNode, CloudPRNT, ePOS surveyed; gap analysis; **10 solution ideas** |
+```mermaid
+flowchart TB
+    subgraph SRV["เซิร์ฟเวอร์อินทราเน็ตบริษัท"]
+        W["เว็บแอปเดิม (ระบบคลัง)"]
+    end
+    subgraph HH["เครื่อง handheld ที่พนักงานถือ · Android 10+"]
+        C["Chrome<br/>เว็บแอป + Bifrǫst SDK"]
+        A["BifrǫstApp<br/>127.0.0.1:8437"]
+        C -->|"HTTP + WebSocket<br/>ภายในเครื่อง"| A
+    end
+    W -->|"ส่งหน้าเว็บผ่านอินทราเน็ต"| C
+    A -->|"Bluetooth SPP / BLE"| P["เครื่องพิมพ์มือถือ"]
+    P -->|"ฉลาก"| S["พนักงานสแกนตรวจ"]
+```
 
-### 02 · Requirements
+### สามข้อที่ต้องเข้าใจตรงกันทั้งทีม
 
-| Doc | Title | Contents |
-| --- | --- | --- |
-| REQ-01 | [Product Requirements](02-requirements/01-prd.md) | Vision, personas, goals, success metrics, MVP scope |
-| REQ-02 | [Software Requirements Specification](02-requirements/02-srs.md) | 67 functional + 39 non-functional requirements; **system-wide constants** |
-| REQ-03 | [User Stories](02-requirements/03-user-stories.md) | 23 stories with Given/When/Then acceptance criteria (22 in v1.0) |
-
-### 03 · Design
-
-| Doc | Title | Contents |
-| --- | --- | --- |
-| DES-01 | [Architecture](03-design/01-architecture.md) | C4 levels 1–3, runtime views, data architecture, deployment |
-| — | [ADR-001](03-design/02-adr/ADR-001-loopback-vs-cloud-relay.md) | Loopback server, not cloud relay or LAN service |
-| — | [ADR-002](03-design/02-adr/ADR-002-kotlin-native-vs-flutter.md) | ~~Native Kotlin, not Flutter or KMP~~ — superseded by ADR-008 |
-| — | [ADR-003](03-design/02-adr/ADR-003-three-tier-payload-api.md) | Three payload tiers over one intermediate representation |
-| — | [ADR-004](03-design/02-adr/ADR-004-ktor-embedded-server.md) | ~~Ktor as the embedded server~~ — superseded by ADR-009 |
-| — | [ADR-005](03-design/02-adr/ADR-005-persistent-queue-room.md) | Database-backed durable queue, single consumer |
-| — | [ADR-006](03-design/02-adr/ADR-006-origin-allowlist-token-auth.md) | Origin allowlist + token, paired by QR |
-| — | [ADR-007](03-design/02-adr/ADR-007-printer-language-abstraction.md) | Driver and transport abstractions before implementations |
-| — | [**ADR-008**](03-design/02-adr/ADR-008-dotnet-for-android.md) | **.NET for Android** (no MAUI), not native Kotlin — supersedes ADR-002 |
-| — | [**ADR-009**](03-design/02-adr/ADR-009-embedded-http-server.md) | **EmbedIO** behind an abstraction — ASP.NET Core does not run on Android — supersedes ADR-004 |
-| DES-03 | [Local API Specification](03-design/03-local-api-spec.md) | 10 endpoints, error model, idempotency contract, OpenAPI |
-| DES-04 | [JavaScript SDK Specification](03-design/04-js-sdk-spec.md) | Public API, result/error model, framework integration |
-| DES-05 | [Print Payload Schema](03-design/05-print-payload-schema.md) | All three tiers, the IR, JSON Schemas, validation order |
-| DES-06 | [Printer Abstraction](03-design/06-printer-abstraction.md) | Driver + transport interfaces, **BLE chunking rules**, mock harness |
-| DES-07 | [Job Lifecycle](03-design/07-job-lifecycle.md) | State machine, retry policy, idempotency, data model |
-| DES-08 | [Security Design](03-design/08-security-design.md) | Trust boundaries, STRIDE model, auth, Android hardening |
-| DES-09 | [UI/UX Specification](03-design/09-ui-ux-spec.md) | Screens, state language, error catalogue, accessibility |
-
-### 04 · Implementation
-
-| Doc | Title | Contents |
-| --- | --- | --- |
-| IMP-01 | [Technology Stack](04-implementation/01-tech-stack.md) | Every choice with its rationale, and what was rejected |
-| IMP-02 | [Project Structure](04-implementation/02-project-structure.md) | Module graph, packages, the dependency rule |
-| IMP-03 | [Coding Standards](04-implementation/03-coding-standards.md) | Error handling, asynchrony, logging, definition of done |
-
-### 05 · Testing
-
-| Doc | Title | Contents |
-| --- | --- | --- |
-| TST-01 | [Test Strategy](05-testing/01-test-strategy.md) | Pyramid, mock harness, device matrix, **15 field scenarios** |
-| TST-02 | [Test Cases](05-testing/02-test-cases.md) | 147 cases, every requirement traced |
-
-### 06 · Operations
-
-| Doc | Title | Contents |
-| --- | --- | --- |
-| OPS-01 | [Deployment Guide](06-operations/01-deployment-guide.md) | Build, sign, MDM rollout, staged deployment, integration |
-| OPS-02 | [Runbook](06-operations/02-runbook.md) | Phone-ready triage for every failure mode |
-| OPS-03 | [Hardware Recommendation](06-operations/03-hardware-recommendation.md) | Printer comparison and a specific recommendation |
-
-### 07 · Project
-
-| Doc | Title | Contents |
-| --- | --- | --- |
-| PRJ-01 | [Roadmap](07-project/01-roadmap.md) | 8 phases, ~18 weeks, milestones, critical path |
-| PRJ-02 | [Risk Register](07-project/02-risk-register.md) | 18 risks scored, with mitigations and closure criteria |
-| PRJ-03 | [Glossary](07-project/03-glossary.md) | Printing, Bluetooth, web platform, and project terminology |
-
----
-
-## Key decisions at a glance
-
-| Decision | Choice | Why |
-| --- | --- | --- |
-| **Topology** | Loopback `127.0.0.1:8437` | Browser and printer share a device. No relay, no discovery, works offline |
-| **Platform** | **.NET for Android** (C#, no MAUI) | The organisation's language, and it binds the full Android SDK. MAUI's cross-platform UI buys nothing for six screens |
-| **HTTP server** | EmbedIO behind `IBridgeServer` | ASP.NET Core has no Android runtime pack; the abstraction keeps that dependency swappable |
-| **Payload API** | Three tiers → one IR | Template for the 90% case; DSL for dynamic layouts; raw as an escape hatch |
-| **Queue** | SQLite + single consumer | Survives crash and reboot; serialised transmission is structural |
-| **Duplicate prevention** | `Idempotency-Key`, 24 h window | A duplicate label is a data-integrity fault, not a cosmetic one |
-| **Security** | Origin allowlist + bearer token | Any local process can reach a loopback port |
-| **Pairing** | Scan a QR with the device's own scanner | The handheld already has a scanner. No 43-character secret to type |
-| **Printers** | Driver + transport abstractions first | The printer has not been purchased yet |
-
----
-
-## What makes this different
-
-Nothing on the market is a local, vendor-neutral, programmable print bridge for Android. QZ Tray has
-the right architecture but no Android build. The Android print-service plugins have the platform but
-no API. The cloud relays have an API but need internet and charge per device.
-
-Three capabilities appear in **no** existing solution and are designed in here:
-
-1. **A template layer** — the web app sends `{ partNo, lot, qty }`; layout lives on the device and
-   can be revised without a web deployment
-2. **Guaranteed single printing under retry** — idempotency is designed into the API and the queue,
-   not bolted onto transport retry
-3. **Use of the handheld's own scanner** — to pair without typing, and to verify that a printed label
-   is actually readable before it reaches a shelf
-
----
-
-## Conventions
-
-- **Requirement IDs** — every requirement, story, test, threat, and risk carries an ID. See
-  [Glossary — identifiers](07-project/03-glossary.md#requirement-identifiers)
-- **Traceability** — decision → requirement → story → test case. CI fails if a `Must have`
-  requirement has no test
-- **Canonical constants** — port, retry counts, timeouts, and limits are defined once in
-  [REQ-02 §4](02-requirements/02-srs.md). Every other document matches that table
-- **Diagrams** — Mermaid, rendered natively by GitHub and VS Code
-- **Language** — documentation in English; requirements use RFC 2119 SHALL / SHOULD / MAY
-
----
-
-## Open questions
-
-| ID | Question | Blocks | Owner |
-| --- | --- | --- | --- |
-| Q-01 | Which printer model is purchased? | Roadmap Phase 5 | Bearing Team |
-| Q-02 | Android versions across the existing fleet | Test matrix | Bearing Team |
-| Q-03 | Which MDM is deployed? | Rollout | IT |
-| Q-04 | Final label dimensions and media type | Template authoring | Warehouse operations |
-
-Only **Q-01** is on the critical path, and even that can be absorbed by reordering phases — the whole
-system is buildable and testable against `MockTransport` before a printer exists.
-
----
-
-## Status
-
-| Phase | Status |
+| ข้อเท็จจริง | ผลที่ตามมา |
 | --- | --- |
-| Discovery | ✅ Complete |
-| Requirements | ✅ Complete |
-| Design | ✅ Complete |
-| Implementation | ⬜ Not started |
-| Testing | ⬜ Not started |
-| Deployment | ⬜ Not started |
+| **เบราว์เซอร์กับเครื่องพิมพ์ต้องอยู่เครื่องเดียวกัน** | เป็นการออกแบบ ไม่ใช่ข้อจำกัดชั่วคราว — และเป็นเหตุผลที่ไม่ต้องมี relay ไม่ต้องมีใบรับรอง |
+| **เซิร์ฟเวอร์บริษัทไม่เคยคุยกับ Bifrǫst โดยตรง** | มันแค่ส่งหน้าเว็บมา การสั่งพิมพ์เกิดที่เบราว์เซอร์ · C# ฝั่งเซิร์ฟเวอร์เรียก `127.0.0.1` **ไม่ได้** |
+| **ไม่ใช้อินเทอร์เน็ตเลย** | APK รุ่นจริงไม่มีแม้แต่สิทธิ์ `INTERNET` และมีเทสต์ตรวจทุกครั้งที่ build |
+
+> Chrome ถือว่า `127.0.0.1` เป็น trustworthy origin หน้า **HTTPS จึงเรียกได้โดยไม่โดนบล็อก
+> mixed-content** และไม่ต้องติดตั้งใบรับรองบนเครื่อง
+
+---
+
+## 3. องค์ประกอบที่ส่งมอบ
+
+```mermaid
+flowchart LR
+    subgraph S1["ส่งมอบ 2 ชิ้น"]
+        APK["bifrost.apk<br/>แอป Android"]
+        SDK["@bearing/bifrost-sdk<br/>ไลบรารีให้เว็บแอป"]
+    end
+    subgraph S2["ภายในแอป"]
+        SRV["HTTP/WS Server"] --> Q["คิวงานพิมพ์"] --> R["ตัวแปลงเป็น IR"] --> D["ไดรเวอร์<br/>ESC/POS · CPCL · ZPL"] --> T["Transport<br/>SPP · BLE"]
+    end
+    SDK -.->|"เรียกผ่าน HTTP"| SRV
+    APK --- SRV
+```
+
+| โมดูล | หน้าที่ | พึ่ง Android? |
+| --- | --- | :-: |
+| `Bifrost.Core` | โมเดลข้อมูล, DSL compiler, เครื่องพิมพ์จำลอง | ✗ |
+| `Bifrost.Drivers` | ESC/POS, CPCL, ZPL, เครื่องมือจัดหน้า | ✗ |
+| `Bifrost.Server` | นิยาม route ของ API | ✗ |
+| `Bifrost.Server.EmbedIO` | อะแดปเตอร์ไปยังไลบรารีเซิร์ฟเวอร์ (สลับได้) | ✗ |
+| `Bifrost.Transport` | Bluetooth SPP, ตรวจภาษาเครื่องพิมพ์ | ✓ |
+| `Bifrost.App` | หน้าจอ + foreground service | ✓ |
+| `sdk/` | TypeScript SDK + อะแดปเตอร์ React / Angular / `<script>` | — |
+| `clients/dotnet/` | ไคลเอนต์ .NET (Blazor, MAUI, WPF) | — |
+
+**กฎเหล็ก: `Core`, `Drivers`, `Server` ห้ามมี `using Android`** — เพราะโค้ดที่ไม่พึ่ง Android รันเทสต์
+บนเครื่องพัฒนาได้ในไม่ถึงวินาที ส่วนที่พึ่ง Android ต้องเสียบเครื่องจริงทุกครั้ง มีสคริปต์
+`tools/scripts/verify-boundaries.sh` ตรวจอัตโนมัติ
+
+---
+
+## 4. การตัดสินใจสำคัญ
+
+ทุกข้อผ่านการเทียบทางเลือกแล้ว เก็บไว้เพื่อไม่ให้ถูกรื้อโดยไม่รู้เหตุผลเดิม
+
+| # | เรื่อง | เลือก | เพราะ |
+| :-: | --- | --- | --- |
+| 1 | **โครงสร้างเครือข่าย** | เซิร์ฟเวอร์ loopback `127.0.0.1:8437` | ไม่ใช่ cloud relay (ต้องต่อเน็ต) ไม่ใช่ LAN service (ต้องค้นหาอุปกรณ์) — เบราว์เซอร์กับเครื่องพิมพ์อยู่เครื่องเดียวกันอยู่แล้ว |
+| 2 | **แพลตฟอร์ม** | .NET for Android (C#) ไม่ใช้ MAUI | เดิมเลือก Kotlin จากความเหมาะทางเทคนิค แต่ภาษาที่องค์กรดูแลต่อได้สำคัญกว่า เมื่อมีผู้พัฒนาคนเดียว · MAUI ไม่คุ้มสำหรับ 6 หน้าจอ |
+| 3 | **เว็บเซิร์ฟเวอร์** | EmbedIO หลัง `IBridgeServer` | **ASP.NET Core ไม่มี runtime pack สำหรับ Android** · ห่อด้วย abstraction ไว้เพื่อสลับตัวได้ |
+| 4 | **รูปแบบ payload** | 3 ระดับ → โครงสร้างกลางเดียว | เทมเพลตสำหรับ 90% ของงาน · DSL สำหรับ layout ที่ผันแปร · raw เป็นทางออกฉุกเฉิน |
+| 5 | **คิวงาน** | SQLite + ผู้บริโภคคนเดียว | รอดจากแอปพังและการรีบูต · ส่งทีละงานเป็นคุณสมบัติเชิงโครงสร้าง ไม่ใช่ข้อจำกัด |
+| 6 | **กันฉลากซ้ำ** | `Idempotency-Key` หน้าต่าง 24 ชม. | ฉลากซ้ำคือความคลาดเคลื่อนของข้อมูลสต็อก ไม่ใช่ปัญหาความสวยงาม |
+| 7 | **ความปลอดภัย** | Origin allowlist + bearer token, จับคู่ด้วย QR | โปรแกรมใดก็ตามบนเครื่องเดียวกันเข้าถึงพอร์ต loopback ได้ · handheld มีเครื่องสแกนอยู่แล้ว ไม่ต้องพิมพ์รหัส 43 ตัว |
+| 8 | **ไดรเวอร์** | นิยาม `IPrinterDriver` / `IPrinterTransport` ก่อนเขียนตัวจริง | ตอนตัดสินใจยังไม่ได้ซื้อเครื่องพิมพ์ — ทำให้งาน 4 เฟสแรกเดินได้โดยไม่ต้องรอฮาร์ดแวร์ |
+
+> **สองข้อที่เคยตัดสินใจแล้วเปลี่ยน** — เดิมเลือก Kotlin (เปลี่ยนเป็น .NET) และ Ktor (เปลี่ยนเป็น
+> EmbedIO) ทั้งสองครั้ง **สถาปัตยกรรมไม่เปลี่ยนเลย** เปลี่ยนแค่ไลบรารีที่มาเติมในช่องเดิม
+
+---
+
+## 5. ค่าคงที่ของระบบ
+
+ค่าอ้างอิงกลาง เอกสารหรือโค้ดที่ระบุค่าเหล่านี้ต้องตรงกับตารางนี้
+
+| ค่า | ค่าที่กำหนด |
+| --- | --- |
+| ที่อยู่ที่ฟัง | `127.0.0.1` เท่านั้น ไม่เคยเป็น `0.0.0.0` |
+| พอร์ต | `8437` |
+| คำนำหน้า API | `/v1` — เปลี่ยนแบบ breaking ต้องขึ้น `/v2` |
+| Android package | `com.bearing.bifrost` |
+| SDK package | `@bearing/bifrost-sdk` |
+| Min / Target SDK | 29 (Android 10) / 36 |
+| Token จับคู่ | 32 ไบต์ (256 บิต) base64url |
+| QR จับคู่ | อายุ 5 นาที ใช้ได้ครั้งเดียว |
+| หน้าต่างกันซ้ำ | 24 ชั่วโมง |
+| ลองใหม่สูงสุด | 5 ครั้ง — ถ่วงเวลา 2 วิ · 8 วิ · 30 วิ · 120 วิ · 300 วิ |
+| คิวสูงสุด | 500 งาน |
+| เก็บประวัติ | 30 วัน หรือ 1000 งาน แล้วแต่ถึงก่อน |
+| ขนาด request สูงสุด | 2 MB |
+| Timeout ต่องาน | 30 วินาที |
+| BLE MTU | เจรจาถึง 512 ไบต์ ถอยลงมาที่ 23 ถ้าล้มเหลว |
+| เก็บ log | 7 วัน สูงสุด 10 MB หมุนไฟล์ |
+
+---
+
+## 6. ขอบเขต
+
+| ✅ ทำ | ❌ ไม่ทำ (และเหตุผล) |
+| --- | --- |
+| พิมพ์ฉลากและใบเสร็จจากเว็บด้วยคำสั่งเดียว | สร้างหรือแทนที่เว็บแอปของบริษัท — Bifrǫst เป็นสะพาน ไม่ใช่ระบบงาน |
+| ทนต่อ Wi-Fi หลุด เครื่องพิมพ์ดับ และแอปรีสตาร์ท | พิมพ์จากเครื่องอื่นที่ไม่ใช่เครื่องที่รันแอป — โครงสร้างเครื่องเดียวคือหัวใจของการทำให้ง่าย |
+| รับประกันว่างานเดิมไม่ถูกพิมพ์ซ้ำ | รองรับ iOS — ฝูงเครื่องเป็น Android ล้วน |
+| รองรับ Bluetooth Classic SPP และ BLE หลายยี่ห้อ | คลาวด์ บัญชีผู้ใช้ หรือ telemetry — เครือข่ายเป็นอินทราเน็ตล้วน |
+| ติดตั้งและตรวจสอบได้บนเครื่อง 20–100 เครื่องโดยคนเดียว | ข้อความภาษาไทยบนฉลาก — เนื้อหาเป็นอังกฤษและตัวเลข |
+| นักพัฒนาเว็บไม่ต้องรู้จัก ESC/POS, ZPL, CPCL | ยืนยันตัวตนรายบุคคลและ audit trail — เลื่อนไปก่อน เครื่องอยู่ในความควบคุมทางกายภาพ |
+| เปลี่ยนหน้าตาฉลากได้โดยไม่ต้อง deploy เว็บ | ขายเชิงพาณิชย์ — ใช้ภายในองค์กรเดียว |
+
+---
+
+## 7. ตัวชี้วัดความสำเร็จ
+
+| ตัวชี้วัด | เป้าหมาย |
+| --- | --- |
+| อัตราพิมพ์สำเร็จ | ≥ 99% |
+| เวลาตั้งแต่กดจนกระดาษออก (p95) | ≤ 3 วินาที |
+| **ฉลากซ้ำ** | **0** |
+| เวลาที่นักพัฒนาเว็บใช้เพิ่มปุ่มพิมพ์ 1 หน้า | ≤ 30 นาที |
+| ปัญหาที่พนักงานแก้เองได้ | ≥ 90% |
+| การเดินไปสถานีพิมพ์ | เป็นศูนย์ |
+
+---
+
+## 8. คำศัพท์
+
+| คำ | ความหมาย |
+| --- | --- |
+| **Bridge** | ตัวแอป Android ที่รับ HTTP แล้วขับเครื่องพิมพ์ |
+| **Loopback / `127.0.0.1`** | ที่อยู่ที่วนกลับมาที่เครื่องตัวเอง ไม่ออกไปข้างนอก |
+| **SPP** | Serial Port Profile — Bluetooth Classic แบบสายอนุกรม ใช้กับเครื่องพิมพ์มือถือส่วนใหญ่ |
+| **BLE / GATT** | Bluetooth Low Energy — คนละโปรโตคอลกับ SPP ต้องส่งข้อมูลเป็นชิ้นเล็ก |
+| **ESC/POS · CPCL · ZPL** | ภาษาคำสั่งเครื่องพิมพ์ คนละตระกูล คุยข้ามกันไม่ได้ |
+| **IR (`PrintDocument`)** | โครงสร้างข้อมูลกลางที่ทุก payload ยุบลงมาก่อนถึงไดรเวอร์ |
+| **Idempotency** | การรับประกันว่าส่งคำสั่งเดิมซ้ำกี่ครั้งก็เกิดผลครั้งเดียว |
+| **Foreground service** | บริการ Android ที่มีการแจ้งเตือนค้าง เพื่อไม่ให้ระบบฆ่าทิ้งเมื่อสลับแอป |
+| **MDM** | ระบบบริหารอุปกรณ์ ใช้ติดตั้งแอปลงเครื่องจำนวนมากพร้อมกัน |
+| **Golden-output test** | เทสต์ที่เทียบไบต์ที่ไดรเวอร์ส่งออกทีละไบต์กับค่าที่ถูกต้อง |
+
+---
+
+## 9. หมายเหตุเรื่องเอกสาร
+
+เอกสารชุดนี้ **รวบจาก 40 ไฟล์ (11,000 บรรทัด) เหลือ 5 ไฟล์** เมื่อ 28 ส.ค. 2026
+รายละเอียดที่ตัดออก — สเปก API ทีละฟิลด์, ADR ฉบับเต็ม 9 ฉบับ, test case 147 รายการ, user story 23
+เรื่อง, SRS 106 ข้อ — **ยังอยู่ครบใน git ที่ commit `a76a494`** เรียกดูได้ด้วย
+
+```bash
+git show a76a494:Docs/03-design/03-local-api-spec.md
+git checkout a76a494 -- Docs/          # ถ้าต้องการกู้กลับมาทั้งหมด
+```
+
+สิ่งที่เก็บไว้คือส่วนที่ใช้ตัดสินใจและใช้ทำงานจริง สิ่งที่ตัดคือรายละเอียดที่โค้ดกับเทสต์เป็น
+แหล่งความจริงที่แม่นกว่าอยู่แล้ว
