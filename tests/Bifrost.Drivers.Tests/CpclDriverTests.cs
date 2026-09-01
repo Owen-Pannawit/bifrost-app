@@ -54,7 +54,7 @@ public sealed class CpclDriverTests
     }
 
     [Fact]
-    public void Every_label_terminates_with_FORM_then_PRINT()
+    public void Gap_media_terminates_with_FORM_then_PRINT()
     {
         var lines = Render(Doc(new PrintBlock.Text("X")))
             .Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
@@ -62,6 +62,24 @@ public sealed class CpclDriverTests
         // Omitting FORM misfeeds the next label on gap media — every subsequent label offsets.
         Assert.Equal("FORM", lines[^2]);
         Assert.Equal("PRINT", lines[^1]);
+    }
+
+    [Fact]
+    public void Continuous_media_prints_without_FORM()
+    {
+        // There is no next label to advance to on a receipt roll, so the printer falls back to its
+        // own configured form length and feeds that much blank paper after every print. On the
+        // bench that was more blank paper than the label itself, on every press of Test Print.
+        var doc = new PrintDocument(
+            PrinterProfile.Widths.Receipt80mmAt203Dpi,
+            MediaType.Continuous,
+            [new PrintBlock.Text("X")]);
+
+        var lines = Encoding.ASCII.GetString(new CpclDriver().Serialise(doc, Zq521))
+            .Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Equal("PRINT", lines[^1]);
+        Assert.DoesNotContain("FORM", lines);
     }
 
     [Fact]

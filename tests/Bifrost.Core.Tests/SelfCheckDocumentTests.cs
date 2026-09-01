@@ -106,13 +106,16 @@ public sealed class SelfCheckDocumentTests
     [Fact]
     public void It_feeds_enough_to_read_but_not_enough_to_waste()
     {
-        // Two constraints pull against each other. Too little and the content stops under the
-        // head, so it cannot be read or torn without pulling media through by hand. Too much and
-        // a button pressed dozens of times while diagnosing empties a roll.
+        // This used to demand at least 24 dots, on the assumption that the document had to clear
+        // the tear bar itself. On the bench hardware it does not: the printer performs its own
+        // tear-off advance after PRINT, so every dot this block adds is spent twice and lands on
+        // the floor. The operator watching a roll disappear during diagnosis is the authority here.
+        //
+        // Only the ceiling is still worth asserting — it is the direction that costs paper.
         var doc = SelfCheckDocument.Create(EscPos, "printer", "14:32:07");
         var feed = doc.Blocks.OfType<PrintBlock.Feed>().Sum(f => f.Dots);
 
-        Assert.InRange(feed, 24, 64);
+        Assert.InRange(feed, 0, 8);
     }
 
     [Fact]

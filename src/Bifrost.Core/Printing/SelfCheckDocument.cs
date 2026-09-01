@@ -65,9 +65,10 @@ public static class SelfCheckDocument
 
                 new PrintBlock.Image(MonochromeBitmap.TestPattern(80), Alignment.Center),
 
-                // Just enough to clear the tear bar. This button gets pressed repeatedly while
-                // diagnosing, and every press costs paper.
-                new PrintBlock.Feed(32),
+                // One dot. The printer's own tear-off advance already clears the bar, so anything
+                // this block adds is paper on the floor — and this button gets pressed repeatedly
+                // while diagnosing.
+                new PrintBlock.Feed(1),
             ]);
     }
 }

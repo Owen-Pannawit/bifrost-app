@@ -80,9 +80,19 @@ public sealed class CpclDriver : IPrinterDriver
             }
         }
 
-        // FORM then PRINT. Omitting FORM misfeeds the next label on gap media — a failure that
-        // shows up as every subsequent label being offset, not as an error.
-        sb.Append("FORM").Append(Crlf);
+        // FORM advances the media to the top of the next label. Gap and black-mark media need it:
+        // without it every subsequent label prints progressively offset, a failure that shows up on
+        // the paper rather than as an error.
+        //
+        // Continuous media has no next label to advance to. The printer falls back to its own
+        // configured form length and feeds that much blank paper after every print — measured on a
+        // ZQ320 with 72 mm receipt roll, more blank paper than the label itself, on every press of
+        // Test Print. So FORM is emitted only where a form boundary actually exists.
+        if (document.MediaType is MediaType.LabelGap or MediaType.LabelBlackMark)
+        {
+            sb.Append("FORM").Append(Crlf);
+        }
+
         sb.Append("PRINT").Append(Crlf);
 
         return Encoding.ASCII.GetBytes(sb.ToString());
