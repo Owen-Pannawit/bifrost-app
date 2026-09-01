@@ -22,6 +22,9 @@ keystore.properties
 node_modules/
 sdk/dist/
 
+# Copied from sdk/dist by the Blazor package's build. One source of truth, and it is sdk/.
+clients/dotnet/Bifrost.Client.Blazor/wwwroot/bifrost.global.js
+
 # OS
 Thumbs.db
 .DS_Store

@@ -1,31 +1,66 @@
 {
   "name": "@bearing/bifrost-sdk",
-  "version": "0.1.0",
-  "description": "Print to a Bluetooth printer from a web page, via the Bifrost bridge.",
+  "version": "0.2.0",
+  "description": "Print to a Bluetooth printer from a web page, via the Bifrost bridge. Works with any framework.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "//exports": [
+    "Comment keys must NOT live inside `exports`. Node rejects an exports object that mixes keys",
+    "starting with '.' and keys that do not — ERR_INVALID_PACKAGE_CONFIG — which makes the whole",
+    "package unimportable. It only shows up once the package is installed somewhere, never here.",
+    "",
+    "./global is dist/index.global.js: the <script> build that defines window.Bifrost, for Razor,",
+    "WebForms and anything without a bundler (FR-704)."
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
-    "//browser": "dist/index.global.js exposes the global `Bifrost` for a plain <script> tag (FR-704)",
-    "./global": "./dist/index.global.js"
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
+    },
+    "./angular": {
+      "types": "./dist/angular.d.ts",
+      "import": "./dist/angular.js",
+      "require": "./dist/angular.cjs"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js",
+      "require": "./dist/testing.cjs"
+    },
+    "./global": "./dist/index.global.js",
+    "./package.json": "./package.json"
   },
   "files": ["dist"],
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs,iife --global-name Bifrost --dts --minify --out-dir dist",
+    "build": "tsup",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "npm run typecheck && npm run test && npm run build"
   },
   "//dependencies": "Intentionally empty and checked in CI — FR-703. Nothing to audit, nothing to update transitively.",
   "dependencies": {},
+  "//peerDependencies": "Only for the framework entry points. The core imports neither.",
+  "peerDependencies": {
+    "react": ">=17"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true }
+  },
   "devDependencies": {
-    "typescript": "^5.6.0",
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
     "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }
 }
